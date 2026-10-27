@@ -1,5 +1,5 @@
 --[[
-    China Pulse - MM2 Halloween Edition (Auto Farm Candy - Corrigido)
+    China Pulse - MM2 Halloween Edition (Auto Farm Candy - Força Bruta)
 ]]--
 
 local Players = game:GetService("Players")
@@ -19,7 +19,7 @@ gui.Name = "ChinaPulseHalloween"
 gui.ResetOnSpawn = false
 gui.Parent = pg
 
--- Janela Principal (Tamanho compacto)
+-- Janela Principal
 local main = Instance.new("Frame")
 main.Size = UDim2.new(0, 320, 0, 220)
 main.Position = UDim2.new(0.5, -160, 0.5, -110)
@@ -36,7 +36,7 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 8)
 corner.Parent = main
 
--- Sistema para Mover o Painel com o dedo no Mobile
+-- Sistema para Mover o Painel
 local dragging, dragInput, dragStart, startPos
 
 main.InputBegan:Connect(function(input)
@@ -77,7 +77,7 @@ titleLabel.TextSize = 14
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.Parent = main
 
--- Botão para Fechar / Abrir o Painel (Fica no canto do ecrã)
+-- Botão para Fechar / Abrir o Painel
 local toggleGuiBtn = Instance.new("TextButton")
 toggleGuiBtn.Size = UDim2.new(0, 40, 0, 40)
 toggleGuiBtn.Position = UDim2.new(0, 20, 0, 100)
@@ -96,7 +96,7 @@ toggleGuiBtn.MouseButton1Click:Connect(function()
     main.Visible = menuVisible
 end)
 
--- Função para criar botões de alternância (Corrigida)
+-- Função para criar botões
 local function createOption(yPos, text, defaultVal, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 290, 0, 35)
@@ -123,13 +123,12 @@ local function createOption(yPos, text, defaultVal, callback)
     end)
 end
 
--- Variáveis de Controlo
+-- Variáveis
 _G.AutoFarmActive = false
 _G.AutoRespawnActive = true
 _G.FarnSpeedValue = 25
 _G.AntiflingActive = true
 
--- Opções do Menu
 createOption(40, "Auto Farm", false, function(state)
     _G.AutoFarmActive = state
 end)
@@ -146,9 +145,9 @@ createOption(160, "Anti Fling / Void", true, function(state)
     _G.AntiflingActive = state
 end)
 
--- Lógica Real do Auto Farm de Doces (MM2)
+-- Recolha Otimizada e Direta por Varredura Total de Partes
 task.spawn(function()
-    while true do
+    while true() do
         task.wait(0.2)
         if _G.AutoFarmActive then
             pcall(function()
@@ -156,19 +155,14 @@ task.spawn(function()
                 if char and char:FindFirstChild("HumanoidRootPart") then
                     local hrp = char.HumanoidRootPart
                     
-                    for _, obj in pairs(Workspace:GetDescendants()) do
+                    for _, obj in ipairs(Workspace:GetDescendants()) do
                         if not _G.AutoFarmActive then break end
-                        local name = obj.Name:lower()
-                        if name == "drop" or name == "candy" or name == "coin" or name == "doce" then
-                            local targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
-                            if targetPart and targetPart:IsA("BasePart") then
-                                hrp.CFrame = targetPart.CFrame + Vector3.new(0, 1, 0)
-                                for _, pr in pairs(obj:GetDescendants()) do
-                                    if pr:IsA("ProximityPrompt") then
-                                        fireproximityprompt(pr)
-                                    end
-                                end
-                                task.wait(0.1)
+                        if obj:IsA("BasePart") then
+                            local n = obj.Name:lower()
+                            if n == "candy" or n == "doce" or n == "drop" or n == "coin" then
+                                -- Move o boneco diretamente colado na peça e força simulação
+                                hrp.CFrame = obj.CFrame + Vector3.new(0, 0.5, 0)
+                                task.wait(0.08)
                             end
                         end
                     end
@@ -177,3 +171,4 @@ task.spawn(function()
         end
     end
 end)
+
