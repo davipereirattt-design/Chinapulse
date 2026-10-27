@@ -1,5 +1,5 @@
 --[[
-    China Pulse - MM2 Halloween Edition (Auto Farm Candy - Compacto e Móvel)
+    China Pulse - MM2 Halloween Edition (Auto Farm Candy - Completo com Botão Fechar/Abrir)
 ]]--
 
 local Players = game:GetService("Players")
@@ -19,7 +19,7 @@ gui.Name = "ChinaPulseHalloween"
 gui.ResetOnSpawn = false
 gui.Parent = pg
 
--- Janela Principal (Tamanho reduzido)
+-- Janela Principal (Tamanho compacto)
 local main = Instance.new("Frame")
 main.Size = UDim2.new(0, 320, 0, 220)
 main.Position = UDim2.new(0.5, -160, 0.5, -110)
@@ -71,11 +71,30 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(0, 320, 0, 30)
 titleLabel.Position = UDim2.new(0, 0, 0, 5)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "🎃 MM2 AUTO FARM (MÓVEL)"
+titleLabel.Text = "🎃 MM2 AUTO FARM"
 titleLabel.TextColor3 = Color3.fromRGB(255, 140, 0)
 titleLabel.TextSize = 14
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.Parent = main
+
+-- Botão para Fechar / Abrir o Painel (Fica no canto do ecrã)
+local toggleGuiBtn = Instance.new("TextButton")
+toggleGuiBtn.Size = UDim2.new(0, 40, 0, 40)
+toggleGuiBtn.Position = UDim2.new(0, 20, 0, 100)
+toggleGuiBtn.BackgroundColor3 = Color3.fromRGB(255, 120, 0)
+toggleGuiBtn.Text = "🎃"
+toggleGuiBtn.TextSize = 20
+toggleGuiBtn.Parent = gui
+
+local tBtnCorner = Instance.new("UICorner")
+tBtnCorner.CornerRadius = UDim.new(1, 0)
+tBtnCorner.Parent = toggleGuiBtn
+
+local menuVisible = true
+toggleGuiBtn.MouseButton1Click:Connect(function()
+    menuVisible = not menuVisible
+    main.Visible = menuVisible
+end)
 
 -- Função para criar botões de alternância (Compactos)
 local function createOption(yPos, text, defaultVal, callback)
@@ -98,7 +117,7 @@ local function createOption(yPos, text, defaultVal, callback)
     local state = defaultVal
     btn.MouseButton1Click:Connect(function()
         state = not state
-        btn.Text = "   " .. text .. ": " .. (state and "LIGADO" or "DESLIGADO")
+        btn.Text = "   " .. text .. ": " + (state and "LIGADO" or "DESLIGADO")
         btn.TextColor3 = state and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 80, 80)
         callback(state)
     end)
@@ -127,10 +146,10 @@ createOption(160, "Anti Fling / Void", true, function(state)
     _G.AntiflingActive = state
 end)
 
--- Lógica do Auto Farm (Apenas Doces)
+-- Lógica Real do Auto Farm de Doces (MM2)
 task.spawn(function()
     while true do
-        task.wait(0.15)
+        task.wait(0.2)
         if _G.AutoFarmActive then
             pcall(function()
                 local char = p.Character
@@ -139,19 +158,16 @@ task.spawn(function()
                     
                     for _, obj in pairs(Workspace:GetDescendants()) do
                         if not _G.AutoFarmActive then break end
-                        if obj:IsA("BasePart") or obj:IsA("Model") then
-                            local name = obj.Name:lower()
-                            if name == "doce" or name == "candy" then
-                                local targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
-                                if targetPart then
-                                    hrp.CFrame = targetPart.CFrame + Vector3.new(0, 1.5, 0)
-                                    for _, pr in pairs(obj:GetDescendants()) do
-                                        if pr:IsA("ProximityPrompt") then
-                                            fireproximityprompt(pr)
-                                        end
+                        if obj.Name == "Drop" or obj.Name == "Candy" or obj.Name == "Coin" or obj.Name == "Doce" then
+                            local targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
+                            if targetPart and targetPart:IsA("BasePart") then
+                                hrp.CFrame = targetPart.CFrame + Vector3.new(0, 1, 0)
+                                for _, pr in pairs(obj:GetDescendants()) do
+                                    if pr:IsA("ProximityPrompt") then
+                                        fireproximityprompt(pr)
                                     end
-                                    task.wait(0.2)
                                 end
+                                task.wait(0.1)
                             end
                         end
                     end
