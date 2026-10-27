@@ -1,5 +1,5 @@
 --[[
-    China Pulse - MM2 Halloween Edition (Auto Farm Candy - Completo com Botão Fechar/Abrir)
+    China Pulse - MM2 Halloween Edition (Auto Farm Candy - Corrigido)
 ]]--
 
 local Players = game:GetService("Players")
@@ -96,7 +96,7 @@ toggleGuiBtn.MouseButton1Click:Connect(function()
     main.Visible = menuVisible
 end)
 
--- Função para criar botões de alternância (Compactos)
+-- Função para criar botões de alternância (Corrigida)
 local function createOption(yPos, text, defaultVal, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 290, 0, 35)
@@ -117,7 +117,7 @@ local function createOption(yPos, text, defaultVal, callback)
     local state = defaultVal
     btn.MouseButton1Click:Connect(function()
         state = not state
-        btn.Text = "   " .. text .. ": " + (state and "LIGADO" or "DESLIGADO")
+        btn.Text = "   " .. text .. ": " .. (state and "LIGADO" or "DESLIGADO")
         btn.TextColor3 = state and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 80, 80)
         callback(state)
     end)
@@ -158,7 +158,8 @@ task.spawn(function()
                     
                     for _, obj in pairs(Workspace:GetDescendants()) do
                         if not _G.AutoFarmActive then break end
-                        if obj.Name == "Drop" or obj.Name == "Candy" or obj.Name == "Coin" or obj.Name == "Doce" then
+                        local name = obj.Name:lower()
+                        if name == "drop" or name == "candy" or name == "coin" or name == "doce" then
                             local targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
                             if targetPart and targetPart:IsA("BasePart") then
                                 hrp.CFrame = targetPart.CFrame + Vector3.new(0, 1, 0)
