@@ -1,155 +1,220 @@
--- [[ MM2 HALLOWEEN CANDY FARM + UI HALLOWEEN ]] --
+--[[ 
+    CHINA HUB - Otimizador, Gráficos Massinha & Anti-Lag (Pronto para Execução)
+]]--
+local Success, Result = pcall(function()
+   local Players = game:GetService("Players")
+   local LocalPlayer = Players.LocalPlayer
+   local Workspace = game:GetService("Workspace")
+   local Lighting = game:GetService("Lighting")
+   local CoreGui = game:GetService("CoreGui")
 
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
-local LocalPlayer = Players.LocalPlayer
+   if CoreGui:FindFirstChild("ChinaHubOptimizer") then
+      CoreGui.ChinaHubOptimizer:Destroy()
+   end
 
--- Remove interface anterior se já existir
-if CoreGui:FindFirstChild("MM2HalloweenFarm") then
-    CoreGui.MM2HalloweenFarm:Destroy()
+   local ScreenGui = Instance.new("ScreenGui")
+   ScreenGui.Name = "ChinaHubOptimizer"
+   ScreenGui.ResetOnSpawn = false
+   ScreenGui.Parent = CoreGui
+
+   -- Botão Flutuante (Abrir / Fechar)
+   local OpenButton = Instance.new("TextButton")
+   OpenButton.Name = "OpenButton"
+   OpenButton.Size = UDim2.new(0, 50, 0, 50)
+   OpenButton.Position = UDim2.new(0, 20, 0, 150)
+   OpenButton.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
+   OpenButton.TextColor3 = Color3.fromRGB(0, 210, 255)
+   OpenButton.TextSize = 22
+   OpenButton.Font = Enum.Font.GothamBold
+   OpenButton.Text = "⚡"
+   OpenButton.Parent = ScreenGui
+
+   Instance.new("UICorner", OpenButton).CornerRadius = UDim.new(0, 12)
+   local btnStroke = Instance.new("UIStroke", OpenButton)
+   btnStroke.Color = Color3.fromRGB(0, 180, 255)
+   btnStroke.Thickness = 2
+
+   -- Painel Principal
+   local MainFrame = Instance.new("Frame")
+   MainFrame.Name = "MainFrame"
+   MainFrame.Size = UDim2.new(0, 320, 0, 280)
+   MainFrame.Position = UDim2.new(0.5, -160, 0.5, -140)
+   MainFrame.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+   MainFrame.BorderSizePixel = 0
+   MainFrame.Visible = false
+   MainFrame.Parent = ScreenGui
+
+   Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 16)
+   local mainStroke = Instance.new("UIStroke", MainFrame)
+   mainStroke.Color = Color3.fromRGB(0, 180, 255)
+   mainStroke.Thickness = 2
+
+   -- TopBar
+   local TopBar = Instance.new("Frame")
+   TopBar.Size = UDim2.new(1, 0, 0, 45)
+   TopBar.BackgroundColor3 = Color3.fromRGB(25, 28, 38)
+   TopBar.BorderSizePixel = 0
+   TopBar.Parent = MainFrame
+
+   Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 16)
+
+   local bottomCover = Instance.new("Frame")
+   bottomCover.Size = UDim2.new(1, 0, 0, 10)
+   bottomCover.Position = UDim2.new(0, 0, 1, -10)
+   bottomCover.BackgroundColor3 = Color3.fromRGB(25, 28, 38)
+   bottomCover.BorderSizePixel = 0
+   bottomCover.Parent = TopBar
+
+   local Title = Instance.new("TextLabel")
+   Title.Size = UDim2.new(1, -50, 1, 0)
+   Title.Position = UDim2.new(0, 15, 0, 0)
+   Title.BackgroundTransparency = 1
+   Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+   Title.TextSize = 15
+   Title.Font = Enum.Font.GothamBold
+   Title.Text = "⚡ CHINA HUB | Otimizador"
+   Title.TextXAlignment = Enum.TextXAlignment.Left
+   Title.Parent = TopBar
+
+   local CloseButton = Instance.new("TextButton")
+   CloseButton.Size = UDim2.new(0, 30, 0, 30)
+   CloseButton.Position = UDim2.new(1, -38, 0.5, -15)
+   CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+   CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+   CloseButton.TextSize = 14
+   CloseButton.Font = Enum.Font.GothamBold
+   CloseButton.Text = "X"
+   CloseButton.Parent = TopBar
+
+   Instance.new("UICorner", CloseButton).CornerRadius = UDim.new(0, 8)
+
+   -- Container
+   local Container = Instance.new("ScrollingFrame")
+   Container.Size = UDim2.new(1, -20, 1, -60)
+   Container.Position = UDim2.new(0, 10, 0, 50)
+   Container.BackgroundTransparency = 1
+   Container.BorderSizePixel = 0
+   Container.CanvasSize = UDim2.new(0, 0, 0, 220)
+   Container.ScrollBarThickness = 4
+   Container.Parent = MainFrame
+
+   local UIListLayout = Instance.new("UIListLayout", Container)
+   UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+   UIListLayout.Padding = UDim.new(0, 12)
+
+   local function createMenuButton(text, color)
+      local btn = Instance.new("TextButton")
+      btn.Size = UDim2.new(1, 0, 0, 48)
+      btn.BackgroundColor3 = color or Color3.fromRGB(30, 35, 45)
+      btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+      btn.TextSize = 13
+      btn.Font = Enum.Font.GothamBold
+      btn.Text = text
+      btn.Parent = Container
+      
+      Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+      local stroke = Instance.new("UIStroke", btn)
+      stroke.Color = Color3.fromRGB(60, 70, 90)
+      stroke.Thickness = 1
+      return btn
+   end
+
+   -- Botão 1: Gráficos Massinha & Sem Textura
+   local BtnTextures = createMenuButton("🎨 Ativar Gráficos Massinha & Sem Textura", Color3.fromRGB(35, 40, 55))
+   BtnTextures.MouseButton1Click:Connect(function()
+      Lighting.GlobalShadows = false
+      Lighting.FogEnd = 9e9
+      Lighting.Brightness = 0
+      Lighting.Technology = Enum.LightingTechnology.Compatibility
+      pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+      
+      for _, effect in ipairs(Lighting:GetChildren()) do
+         if effect:IsA("PostEffect") or effect:IsA("Atmosphere") or effect:IsA("Sky") then
+            effect:Destroy()
+         end
+      end
+      
+      for _, obj in ipairs(Workspace:GetDescendants()) do
+         if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") or obj:IsA("SpecialMesh") or obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Explosion") or obj:IsA("Highlight") then
+            obj:Destroy()
+         elseif obj:IsA("MeshPart") then
+            obj.TextureID = ""
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.CastShadow = false
+            obj.Color = Color3.fromRGB(150, 150, 150)
+         elseif obj:IsA("BasePart") then
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+            obj.CastShadow = false
+            obj.Color = Color3.fromRGB(150, 150, 150)
+         end
+      end
+      BtnTextures.Text = "✅ Gráficos Massinha Ativados!"
+   end)
+
+   -- Botão 2: Anti-Lag Extremo
+   local BtnAntiLag = createMenuButton("⚡ Anti-Lag Extremo (Otimizar FPS)", Color3.fromRGB(35, 40, 55))
+   BtnAntiLag.MouseButton1Click:Connect(function()
+      for _, v in ipairs(Workspace:GetDescendants()) do
+         if v:IsA("BasePart") then
+            v.Material = Enum.Material.SmoothPlastic
+            v.CastShadow = false
+         end
+      end
+      settings().Rendering.EagerBulkExecution = true
+      BtnAntiLag.Text = "✅ Anti-Lag Aplicado com Sucesso!"
+   end)
+
+   -- Botão 3: Limpar Memória / Lixo
+   local BtnClean = createMenuButton("🧹 Limpar Lixo e Cache da Memória", Color3.fromRGB(35, 40, 55))
+   BtnClean.MouseButton1Click:Connect(function()
+      for _, v in ipairs(CoreGui:GetDescendants()) do
+         pcall(function()
+            if v:IsA("ImageLabel") or v:IsA("ImageButton") then
+               v.Image = ""
+            end
+         end)
+      end
+      BtnClean.Text = "✅ Memória Limpa!"
+   end)
+
+   -- Eventos de Abrir / Fechar e Arrastar
+   OpenButton.MouseButton1Click:Connect(function()
+      MainFrame.Visible = not MainFrame.Visible
+   end)
+
+   CloseButton.MouseButton1Click:Connect(function()
+      MainFrame.Visible = false
+   end)
+
+   local dragging, dragInput, dragStart, startPos
+   OpenButton.InputBegan:Connect(function(input)
+      if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+         dragging = true
+         dragStart = input.Position
+         startPos = OpenButton.Position
+         input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+               dragging = false
+            end
+         end)
+      end
+   end)
+
+   OpenButton.InputChanged:Connect(function(input)
+      if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+         dragInput = input
+      end
+   end)
+
+   game:GetService("UserInputService").InputChanged:Connect(function(input)
+      if input == dragInput and dragging then
+         local delta = input.Position - dragStart
+         OpenButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+      end
+   end)
+end)
+
+if not Success then
+   warn("Erro ao carregar o China Hub: " .. tostring(Result))
 end
-
--- Variáveis de Controle
-getgenv().CandyFarm = false
-
--- Criando a UI Principal (Tema Halloween)
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MM2HalloweenFarm"
-ScreenGui.Parent = CoreGui
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
--- Janela Principal
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 20, 35)
-MainFrame.Position = UDim2.new(0.5, -125, 0.5, -100)
-MainFrame.Size = UDim2.new(0, 250, 0, 180)
-MainFrame.Active = true
-MainFrame.Draggable = true
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 10)
-UICorner.Parent = MainFrame
-
-local UIStroke = Instance.new("UIStroke")
-UIStroke.Color = Color3.fromRGB(255, 102, 0)
-UIStroke.Thickness = 2
-UIStroke.Parent = MainFrame
-
--- Título
-local Title = Instance.new("TextLabel")
-Title.Parent = MainFrame
-Title.BackgroundColor3 = Color3.fromRGB(255, 102, 0)
-Title.Size = UDim2.new(1, 0, 0, 35)
-Title.Font = Enum.Font.GothamBold
-Title.Text = "🎃 MM2 Candy Farm 🎃"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 14
-
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 10)
-TitleCorner.Parent = Title
-
--- Botão de Minimizar (Abrir/Fechar a UI)
-local ToggleUIButton = Instance.new("TextButton")
-ToggleUIButton.Parent = ScreenGui
-ToggleUIButton.BackgroundColor3 = Color3.fromRGB(255, 102, 0)
-ToggleUIButton.Position = UDim2.new(0.05, 0, 0.1, 0)
-ToggleUIButton.Size = UDim2.new(0, 45, 0, 45)
-ToggleUIButton.Font = Enum.Font.GothamBold
-ToggleUIButton.Text = "👻"
-ToggleUIButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleUIButton.TextSize = 20
-
-local ToggleUICorner = Instance.new("UICorner")
-ToggleUICorner.CornerRadius = UDim.new(1, 0)
-ToggleUICorner.Parent = ToggleUIButton
-
-local isOpen = true
-ToggleUIButton.MouseButton1Click:Connect(function()
-    isOpen = not isOpen
-    MainFrame.Visible = isOpen
-end)
-
--- Botão de Ligar/Desligar o Farm de Doces
-local FarmButton = Instance.new("TextButton")
-FarmButton.Parent = MainFrame
-FarmButton.BackgroundColor3 = Color3.fromRGB(45, 35, 60)
-FarmButton.Position = UDim2.new(0.1, 0, 0.35, 0)
-FarmButton.Size = UDim2.new(0.8, 0, 0, 45)
-FarmButton.Font = Enum.Font.GothamBold
-FarmButton.Text = "Auto Candies: [OFF]"
-FarmButton.TextColor3 = Color3.fromRGB(255, 100, 100)
-FarmButton.TextSize = 14
-
-local FarmCorner = Instance.new("UICorner")
-FarmCorner.CornerRadius = UDim.new(0, 8)
-FarmCorner.Parent = FarmButton
-
-local FarmStroke = Instance.new("UIStroke")
-FarmStroke.Color = Color3.fromRGB(255, 102, 0)
-FarmStroke.Thickness = 1
-FarmStroke.Parent = FarmButton
-
--- Status
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Parent = MainFrame
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Position = UDim2.new(0.1, 0, 0.75, 0)
-StatusLabel.Size = UDim2.new(0.8, 0, 0, 30)
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.Text = "Status: Aguardando..."
-StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-StatusLabel.TextSize = 12
-
-FarmButton.MouseButton1Click:Connect(function()
-    getgenv().CandyFarm = not getgenv().CandyFarm
-    if getgenv().CandyFarm then
-        FarmButton.Text = "Auto Candies: [ON]"
-        FarmButton.TextColor3 = Color3.fromRGB(100, 255, 100)
-        StatusLabel.Text = "Status: Coletando doces..."
-    else
-        FarmButton.Text = "Auto Candies: [OFF]"
-        FarmButton.TextColor3 = Color3.fromRGB(255, 100, 100)
-        StatusLabel.Text = "Status: Parado"
-    end
-end)
-
--- [[ LÓGICA DE FARM DE DOCES NO MM2 ]] --
-task.spawn(function()
-    while task.wait(0.3) do
-        if getgenv().CandyFarm then
-            pcall(function()
-                local char = LocalPlayer.Character
-                if char and char:FindFirstChild("HumanoidRootPart") then
-                    -- No MM2, os drops de eventos geralmente ficam espalhados pelo mapa ou dentro de uma pasta específica na Workspace
-                    -- Vamos procurar por partes chamadas "CoinVisual", "Candy", "Drop" ou itens na pasta de mapa
-                    local foundCandy = false
-                    
-                    for _, obj in ipairs(Workspace:GetDescendants()) do
-                        if not getgenv().CandyFarm then break end
-                        
-                        -- Verifica se o objeto tem o nome relacionado a doces/moedas do evento
-                        if obj.Name == "Candy" or obj.Name == "CoinVisual" or obj:IsA("TouchTransmitter") then
-                            local parentPart = obj.Parent
-                            if parentPart and parentPart:IsA("BasePart") then
-                                -- Teleporta suavemente ou diretamente para o doce recolher
-                                char.HumanoidRootPart.CFrame = parentPart.CFrame + Vector3.new(0, 2, 0)
-                                foundCandy = true
-                                task.wait(0.1) -- Pequeno delay para registrar a coleta
-                            end
-                        end
-                    end
-                    
-                    if not foundCandy then
-                        StatusLabel.Text = "Status: Procurando doces..."
-                    else
-                        StatusLabel.Text = "Status: Pegando doces!"
-                    end
-                end
-            end)
-        end
-    end
-end)
