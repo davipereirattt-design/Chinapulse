@@ -1,7 +1,8 @@
 --[[ 
     CHINA HUB - Anime Piece Auto Farm & Otimizador Móvel
-    - Auto Missão inteligente integrada ao Auto Farm
+    - Auto Missão integrada e automática ao ligar o Auto Farm
     - Posição flutuante sobre a cabeça do bandido (deitado de barriga para baixo)
+    - Painel móvel e botão flutuante próprios
     - Sistema Anti-Lag e Gráficos Massinha
 ]]--
 
@@ -12,7 +13,6 @@ local Success, Result = pcall(function()
    local Lighting = game:GetService("Lighting")
    local CoreGui = game:GetService("CoreGui")
    local UserInputService = game:GetService("UserInputService")
-   local ReplicatedStorage = game:GetService("ReplicatedStorage")
    local VirtualUser = game:GetService("VirtualUser")
 
    if CoreGui:FindFirstChild("ChinaHubAnimePiece") then
@@ -159,7 +159,6 @@ local Success, Result = pcall(function()
 
    -- ==================== FUNÇÕES DE AUTOMATIZAÇÃO ====================
 
-   -- Função para simular o soco automático
    local function attackTarget()
       pcall(function()
          VirtualUser:Button1Down(Vector2.new(0,0), Workspace.CurrentCamera.CFrame)
@@ -168,12 +167,12 @@ local Success, Result = pcall(function()
       end)
    end
 
-   -- Encontrar NPC de Missão com base no nível/nome (ex: Zack na ilha inicial)
+   -- Encontrar NPC de Missão (como o Zack ou outros da ilha)
    local function getQuestNpc()
       for _, obj in ipairs(Workspace:GetDescendants()) do
          if obj:IsA("Model") and (obj.Name:lower() == "zack" or obj.Name:lower():find("quest") or obj.Name:lower():find("npc")) then
-            local humanoidRootPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
-            if humanoidRootPart then
+            local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
+            if root then
                return obj
             end
          end
@@ -181,7 +180,7 @@ local Success, Result = pcall(function()
       return nil
    end
 
-   -- Encontrar inimigos válidos (Bandidos)
+   -- Encontrar os inimigos (bandidos) mais próximos
    local function getNearestBandit()
       local nearest = nil
       local shortestDistance = math.huge
@@ -217,12 +216,11 @@ local Success, Result = pcall(function()
                if character and character:FindFirstChild("HumanoidRootPart") then
                   local hrp = character.HumanoidRootPart
 
-                  -- 1. Verifica se tem missão ativa (procura indicador de missão na interface ou PlayerGui)
+                  -- 1. Verifica se tem missão ativa na tela
                   local hasActiveQuest = false
                   pcall(function()
                      local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
                      if playerGui then
-                        -- Procura rótulos de missão ativos na tela
                         for _, gui in ipairs(playerGui:GetDescendants()) do
                            if gui:IsA("TextLabel") and (gui.Text:lower():find("derrote") or gui.Text:lower():find("quest") or gui.Text:lower():find("/")) then
                               hasActiveQuest = true
@@ -231,28 +229,26 @@ local Success, Result = pcall(function()
                      end
                   end)
 
-                  -- Se não tiver missão ativa, vai até o NPC (Zack) pegar automaticamente
+                  -- Se não tiver missão ativa, vai automaticamente interagir com o NPC de missão
                   if not hasActiveQuest then
                      local questNpc = getQuestNpc()
                      if questNpc and questNpc:FindFirstChild("HumanoidRootPart") then
                         hrp.CFrame = questNpc.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.5)
-                        -- Tenta interagir / disparar prompt
+                        task.wait(0.4)
                         for _, prompt in ipairs(questNpc:GetDescendants()) do
                            if prompt:IsA("ProximityPrompt") then
                               fireproximityprompt(prompt)
                            end
                         end
-                        task.wait(1)
+                        task.wait(0.8)
                      end
                   end
 
-                  -- 2. Localiza o bandido e faz o farm flutuando de barriga para baixo em cima da cabeça
+                  -- 2. Localiza o bandido e teleporta flutuando sobre a cabeça (deitado de barriga para baixo)
                   local bandit = getNearestBandit()
                   if bandit and bandit:FindFirstChild("HumanoidRootPart") then
                      local bHrp = bandit.HumanoidRootPart
                      
-                     -- Posiciona exatamente em cima da cabeça do bandido, deitado (rodado para baixo)
                      hrp.CFrame = bHrp.CFrame * CFrame.new(0, 4, 0) * CFrame.Angles(math.rad(90), 0, 0)
                      hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                      
