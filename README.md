@@ -1,25 +1,31 @@
 --[[ 
-    CHINA HUB - Otimizador, Gráficos Massinha & Anti-Lag (Pronto para Execução)
+    CHINA HUB - Anime Piece Auto Farm & Otimizador Móvel
+    - Auto Missão inteligente integrada ao Auto Farm
+    - Posição flutuante sobre a cabeça do bandido (deitado de barriga para baixo)
+    - Sistema Anti-Lag e Gráficos Massinha
 ]]--
+
 local Success, Result = pcall(function()
    local Players = game:GetService("Players")
    local LocalPlayer = Players.LocalPlayer
    local Workspace = game:GetService("Workspace")
    local Lighting = game:GetService("Lighting")
    local CoreGui = game:GetService("CoreGui")
+   local UserInputService = game:GetService("UserInputService")
+   local ReplicatedStorage = game:GetService("ReplicatedStorage")
+   local VirtualUser = game:GetService("VirtualUser")
 
-   if CoreGui:FindFirstChild("ChinaHubOptimizer") then
-      CoreGui.ChinaHubOptimizer:Destroy()
+   if CoreGui:FindFirstChild("ChinaHubAnimePiece") then
+      CoreGui.ChinaHubAnimePiece:Destroy()
    end
 
    local ScreenGui = Instance.new("ScreenGui")
-   ScreenGui.Name = "ChinaHubOptimizer"
+   ScreenGui.Name = "ChinaHubAnimePiece"
    ScreenGui.ResetOnSpawn = false
    ScreenGui.Parent = CoreGui
 
-   -- Botão Flutuante (Abrir / Fechar)
+   -- ==================== BOTÃO FLUTUANTE MÓVEL ====================
    local OpenButton = Instance.new("TextButton")
-   OpenButton.Name = "OpenButton"
    OpenButton.Size = UDim2.new(0, 50, 0, 50)
    OpenButton.Position = UDim2.new(0, 20, 0, 150)
    OpenButton.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
@@ -30,26 +36,25 @@ local Success, Result = pcall(function()
    OpenButton.Parent = ScreenGui
 
    Instance.new("UICorner", OpenButton).CornerRadius = UDim.new(0, 12)
-   local btnStroke = Instance.new("UIStroke", OpenButton)
-   btnStroke.Color = Color3.fromRGB(0, 180, 255)
-   btnStroke.Thickness = 2
+   local strokeBtn = Instance.new("UIStroke", OpenButton)
+   strokeBtn.Color = Color3.fromRGB(0, 180, 255)
+   strokeBtn.Thickness = 2
 
-   -- Painel Principal
+   -- ==================== PAINEL PRINCIPAL MÓVEL ====================
    local MainFrame = Instance.new("Frame")
-   MainFrame.Name = "MainFrame"
-   MainFrame.Size = UDim2.new(0, 320, 0, 280)
-   MainFrame.Position = UDim2.new(0.5, -160, 0.5, -140)
+   MainFrame.Size = UDim2.new(0, 320, 0, 320)
+   MainFrame.Position = UDim2.new(0.5, -160, 0.5, -160)
    MainFrame.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
    MainFrame.BorderSizePixel = 0
    MainFrame.Visible = false
    MainFrame.Parent = ScreenGui
 
    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 16)
-   local mainStroke = Instance.new("UIStroke", MainFrame)
-   mainStroke.Color = Color3.fromRGB(0, 180, 255)
-   mainStroke.Thickness = 2
+   local strokeMain = Instance.new("UIStroke", MainFrame)
+   strokeMain.Color = Color3.fromRGB(0, 180, 255)
+   strokeMain.Thickness = 2
 
-   -- TopBar
+   -- TopBar (Cabeçalho)
    local TopBar = Instance.new("Frame")
    TopBar.Size = UDim2.new(1, 0, 0, 45)
    TopBar.BackgroundColor3 = Color3.fromRGB(25, 28, 38)
@@ -70,9 +75,9 @@ local Success, Result = pcall(function()
    Title.Position = UDim2.new(0, 15, 0, 0)
    Title.BackgroundTransparency = 1
    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-   Title.TextSize = 15
+   Title.TextSize = 14
    Title.Font = Enum.Font.GothamBold
-   Title.Text = "⚡ CHINA HUB | Otimizador"
+   Title.Text = "⚡ CHINA HUB | Anime Piece"
    Title.TextXAlignment = Enum.TextXAlignment.Left
    Title.Parent = TopBar
 
@@ -84,28 +89,57 @@ local Success, Result = pcall(function()
    CloseButton.TextSize = 14
    CloseButton.Font = Enum.Font.GothamBold
    CloseButton.Text = "X"
-   CloseButton.Parent = TopBar
+   CloseButton.Parent = MainFrame
 
    Instance.new("UICorner", CloseButton).CornerRadius = UDim.new(0, 8)
 
    -- Container
    local Container = Instance.new("ScrollingFrame")
-   Container.Size = UDim2.new(1, -20, 1, -60)
-   Container.Position = UDim2.new(0, 10, 0, 50)
+   Container.Size = UDim2.new(1, -20, 1, -65)
+   Container.Position = UDim2.new(0, 10, 0, 55)
    Container.BackgroundTransparency = 1
    Container.BorderSizePixel = 0
-   Container.CanvasSize = UDim2.new(0, 0, 0, 220)
+   Container.CanvasSize = UDim2.new(0, 0, 0, 260)
    Container.ScrollBarThickness = 4
    Container.Parent = MainFrame
 
    local UIListLayout = Instance.new("UIListLayout", Container)
    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-   UIListLayout.Padding = UDim.new(0, 12)
+   UIListLayout.Padding = UDim.new(0, 10)
 
-   local function createMenuButton(text, color)
+   local function createToggle(text, callback)
       local btn = Instance.new("TextButton")
-      btn.Size = UDim2.new(1, 0, 0, 48)
-      btn.BackgroundColor3 = color or Color3.fromRGB(30, 35, 45)
+      btn.Size = UDim2.new(1, 0, 0, 45)
+      btn.BackgroundColor3 = Color3.fromRGB(30, 35, 45)
+      btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+      btn.TextSize = 13
+      btn.Font = Enum.Font.GothamBold
+      btn.Text = text .. ": [DESLIGADO]"
+      btn.Parent = Container
+      
+      Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+      local stroke = Instance.new("UIStroke", btn)
+      stroke.Color = Color3.fromRGB(60, 70, 90)
+      stroke.Thickness = 1
+      
+      local state = false
+      btn.MouseButton1Click:Connect(function()
+         state = not state
+         if state then
+            btn.Text = text .. ": [LIGADO]"
+            btn.BackgroundColor3 = Color3.fromRGB(0, 120, 180)
+         else
+            btn.Text = text .. ": [DESLIGADO]"
+            btn.BackgroundColor3 = Color3.fromRGB(30, 35, 45)
+         end
+         callback(state)
+      end)
+   end
+
+   local function createButton(text, callback)
+      local btn = Instance.new("TextButton")
+      btn.Size = UDim2.new(1, 0, 0, 45)
+      btn.BackgroundColor3 = Color3.fromRGB(35, 40, 55)
       btn.TextColor3 = Color3.fromRGB(255, 255, 255)
       btn.TextSize = 13
       btn.Font = Enum.Font.GothamBold
@@ -116,66 +150,146 @@ local Success, Result = pcall(function()
       local stroke = Instance.new("UIStroke", btn)
       stroke.Color = Color3.fromRGB(60, 70, 90)
       stroke.Thickness = 1
-      return btn
+      
+      btn.MouseButton1Click:Connect(callback)
    end
 
-   -- Botão 1: Gráficos Massinha & Sem Textura
-   local BtnTextures = createMenuButton("🎨 Ativar Gráficos Massinha & Sem Textura", Color3.fromRGB(35, 40, 55))
-   BtnTextures.MouseButton1Click:Connect(function()
-      Lighting.GlobalShadows = false
-      Lighting.FogEnd = 9e9
-      Lighting.Brightness = 0
-      Lighting.Technology = Enum.LightingTechnology.Compatibility
-      pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
-      
-      for _, effect in ipairs(Lighting:GetChildren()) do
-         if effect:IsA("PostEffect") or effect:IsA("Atmosphere") or effect:IsA("Sky") then
-            effect:Destroy()
-         end
-      end
-      
+   -- ==================== VARIÁVEIS DE ESTADO ====================
+   local autoFarmEnabled = false
+
+   -- ==================== FUNÇÕES DE AUTOMATIZAÇÃO ====================
+
+   -- Função para simular o soco automático
+   local function attackTarget()
+      pcall(function()
+         VirtualUser:Button1Down(Vector2.new(0,0), Workspace.CurrentCamera.CFrame)
+         task.wait(0.05)
+         VirtualUser:Button1Up(Vector2.new(0,0), Workspace.CurrentCamera.CFrame)
+      end)
+   end
+
+   -- Encontrar NPC de Missão com base no nível/nome (ex: Zack na ilha inicial)
+   local function getQuestNpc()
       for _, obj in ipairs(Workspace:GetDescendants()) do
-         if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") or obj:IsA("SpecialMesh") or obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Explosion") or obj:IsA("Highlight") then
-            obj:Destroy()
-         elseif obj:IsA("MeshPart") then
-            obj.TextureID = ""
-            obj.Material = Enum.Material.SmoothPlastic
-            obj.CastShadow = false
-            obj.Color = Color3.fromRGB(150, 150, 150)
-         elseif obj:IsA("BasePart") then
-            obj.Material = Enum.Material.SmoothPlastic
-            obj.Reflectance = 0
-            obj.CastShadow = false
-            obj.Color = Color3.fromRGB(150, 150, 150)
-         end
-      end
-      BtnTextures.Text = "✅ Gráficos Massinha Ativados!"
-   end)
-
-   -- Botão 2: Anti-Lag Extremo
-   local BtnAntiLag = createMenuButton("⚡ Anti-Lag Extremo (Otimizar FPS)", Color3.fromRGB(35, 40, 55))
-   BtnAntiLag.MouseButton1Click:Connect(function()
-      for _, v in ipairs(Workspace:GetDescendants()) do
-         if v:IsA("BasePart") then
-            v.Material = Enum.Material.SmoothPlastic
-            v.CastShadow = false
-         end
-      end
-      settings().Rendering.EagerBulkExecution = true
-      BtnAntiLag.Text = "✅ Anti-Lag Aplicado com Sucesso!"
-   end)
-
-   -- Botão 3: Limpar Memória / Lixo
-   local BtnClean = createMenuButton("🧹 Limpar Lixo e Cache da Memória", Color3.fromRGB(35, 40, 55))
-   BtnClean.MouseButton1Click:Connect(function()
-      for _, v in ipairs(CoreGui:GetDescendants()) do
-         pcall(function()
-            if v:IsA("ImageLabel") or v:IsA("ImageButton") then
-               v.Image = ""
+         if obj:IsA("Model") and (obj.Name:lower() == "zack" or obj.Name:lower():find("quest") or obj.Name:lower():find("npc")) then
+            local humanoidRootPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
+            if humanoidRootPart then
+               return obj
             end
-         end)
+         end
       end
-      BtnClean.Text = "✅ Memória Limpa!"
+      return nil
+   end
+
+   -- Encontrar inimigos válidos (Bandidos)
+   local function getNearestBandit()
+      local nearest = nil
+      local shortestDistance = math.huge
+      local character = LocalPlayer.Character
+      if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+      local hrp = character.HumanoidRootPart
+
+      for _, obj in ipairs(Workspace:GetDescendants()) do
+         if obj:IsA("Model") and obj ~= character then
+            local humanoid = obj:FindFirstChildOfClass("Humanoid")
+            local targetHrp = obj:FindFirstChild("HumanoidRootPart")
+            if humanoid and targetHrp and humanoid.Health > 0 then
+               local nameLower = obj.Name:lower()
+               if nameLower:find("bandit") or nameLower:find("bandido") or nameLower:find("zack") then
+                  local dist = (hrp.Position - targetHrp.Position).Magnitude
+                  if dist < shortestDistance then
+                     shortestDistance = dist
+                     nearest = obj
+                  end
+               end
+            end
+         end
+      end
+      return nearest
+   end
+
+   -- Loop Principal do Auto Farm + Auto Missão
+   task.spawn(function()
+      while true do
+         if autoFarmEnabled then
+            pcall(function()
+               local character = LocalPlayer.Character
+               if character and character:FindFirstChild("HumanoidRootPart") then
+                  local hrp = character.HumanoidRootPart
+
+                  -- 1. Verifica se tem missão ativa (procura indicador de missão na interface ou PlayerGui)
+                  local hasActiveQuest = false
+                  pcall(function()
+                     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                     if playerGui then
+                        -- Procura rótulos de missão ativos na tela
+                        for _, gui in ipairs(playerGui:GetDescendants()) do
+                           if gui:IsA("TextLabel") and (gui.Text:lower():find("derrote") or gui.Text:lower():find("quest") or gui.Text:lower():find("/")) then
+                              hasActiveQuest = true
+                           end
+                        end
+                     end
+                  end)
+
+                  -- Se não tiver missão ativa, vai até o NPC (Zack) pegar automaticamente
+                  if not hasActiveQuest then
+                     local questNpc = getQuestNpc()
+                     if questNpc and questNpc:FindFirstChild("HumanoidRootPart") then
+                        hrp.CFrame = questNpc.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
+                        task.wait(0.5)
+                        -- Tenta interagir / disparar prompt
+                        for _, prompt in ipairs(questNpc:GetDescendants()) do
+                           if prompt:IsA("ProximityPrompt") then
+                              fireproximityprompt(prompt)
+                           end
+                        end
+                        task.wait(1)
+                     end
+                  end
+
+                  -- 2. Localiza o bandido e faz o farm flutuando de barriga para baixo em cima da cabeça
+                  local bandit = getNearestBandit()
+                  if bandit and bandit:FindFirstChild("HumanoidRootPart") then
+                     local bHrp = bandit.HumanoidRootPart
+                     
+                     -- Posiciona exatamente em cima da cabeça do bandido, deitado (rodado para baixo)
+                     hrp.CFrame = bHrp.CFrame * CFrame.new(0, 4, 0) * CFrame.Angles(math.rad(90), 0, 0)
+                     hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                     
+                     attackTarget()
+                  end
+               end
+            end)
+         end
+         task.wait(0.1)
+      end
+   end)
+
+   -- ==================== BOTÕES DO PAINEL ====================
+
+   createToggle("⚔️ Auto Farm + Auto Missão", function(state)
+      autoFarmEnabled = state
+   end)
+
+   createButton("🎨 Ativar Gráficos Massinha & Anti-Lag", function()
+      task.spawn(function()
+         Lighting.GlobalShadows = false
+         Lighting.FogEnd = 9e9
+         Lighting.Brightness = 0
+         Lighting.Technology = Enum.LightingTechnology.Compatibility
+         
+         for _, obj in ipairs(Workspace:GetDescendants()) do
+            pcall(function()
+               if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") or obj:IsA("ParticleEmitter") then
+                  obj:Destroy()
+               elseif obj:IsA("BasePart") or obj:IsA("MeshPart") then
+                  obj.Material = Enum.Material.SmoothPlastic
+                  obj.Color = Color3.fromRGB(140, 140, 140)
+                  obj.CastShadow = false
+               end
+            end)
+         end
+      end)
    end)
 
    -- Eventos de Abrir / Fechar e Arrastar
@@ -187,34 +301,41 @@ local Success, Result = pcall(function()
       MainFrame.Visible = false
    end)
 
-   local dragging, dragInput, dragStart, startPos
-   OpenButton.InputBegan:Connect(function(input)
-      if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-         dragging = true
-         dragStart = input.Position
-         startPos = OpenButton.Position
-         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-               dragging = false
-            end
-         end)
-      end
-   end)
+   local function makeDraggable(item, handle)
+      handle = handle or item
+      local dragging, dragInput, dragStart, startPos
+      
+      handle.InputBegan:Connect(function(input)
+         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = item.Position
+            input.Changed:Connect(function()
+               if input.UserInputState == Enum.UserInputState.End then
+                  dragging = false
+               end
+            end)
+         end
+      end)
 
-   OpenButton.InputChanged:Connect(function(input)
-      if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-         dragInput = input
-      end
-   end)
+      handle.InputChanged:Connect(function(input)
+         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragInput = input
+         end
+      end)
 
-   game:GetService("UserInputService").InputChanged:Connect(function(input)
-      if input == dragInput and dragging then
-         local delta = input.Position - dragStart
-         OpenButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-      end
-   end)
+      UserInputService.InputChanged:Connect(function(input)
+         if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            item.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+         end
+      end)
+   end
+
+   makeDraggable(OpenButton)
+   makeDraggable(MainFrame, TopBar)
 end)
 
 if not Success then
-   warn("Erro ao carregar o China Hub: " .. tostring(Result))
+   warn("Erro ao carregar o script do Anime Piece: " .. tostring(Result))
 end
