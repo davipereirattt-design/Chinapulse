@@ -51,13 +51,12 @@ local FallbackIslandSpots = {
 --// Configurações Globais
 getgenv().HubConfig = {
 	SelectedMobs = {}, -- Até 2 mobs selecionados
-	AutoFarmMobs = false,
-	AutoSeaBeast = false, -- Só ataca/vai quando um Sea Beast spawnar (não leva pro mar sozinho)
+	AutoMobs = false,
+	AutoSeaEvent = false, -- Só vai/ataca quando spawnar Sea Beast / evento de mar (não leva pro mar sozinho)
 	TpBypass = true,
-	AutoAttack = false,
 	SideOffset = 3.5,
 	GroupRadius = 180,
-	SeaBeastOffset = 14
+	SeaEventOffset = 14
 }
 
 local LabelToMobName = {}
@@ -78,7 +77,7 @@ local SlotTurn = 1
 local FallbackIndex = 1
 local CurrentTarget = nil
 local CurrentSlotName = nil
-local CurrentSeaBeast = nil
+local CurrentSeaTarget = nil
 
 local IgnoredKeywords = {
 	"dummy", "damage", "dmg", "test", "testing", "training", "train",
@@ -152,7 +151,6 @@ local function FindBestPart(model)
 	return nil
 end
 
---// Checa se um mob comum ainda está vivo e válido
 local function IsTargetStillAlive(entry)
 	if not entry then return false end
 	local model = entry.model
@@ -173,8 +171,7 @@ local function IsTargetStillAlive(entry)
 	return true
 end
 
---// Checa se um Sea Beast ainda está vivo e válido (pode ter Humanoid ou atributos/vida própria)
-local function IsSeaBeastAlive(entry)
+local function IsSeaTargetAlive(entry)
 	if not entry then return false end
 	local model = entry.model
 	local part = entry.hrp
@@ -195,23 +192,24 @@ local function IsSeaBeastAlive(entry)
 	return true
 end
 
-local function IsSeaBeastName(nameStr)
+local function IsSeaEventEntityName(nameStr)
 	local n = NormalizeName(nameStr)
 	return n:find("seabeast", 1, true)
 		or n:find("seabest", 1, true)
+		or n:find("seaevent", 1, true)
 		or n:find("beastsea", 1, true)
-		or (n:find("sea", 1, true) and n:find("beast", 1, true))
+		or (n:find("sea", 1, true) and (n:find("beast", 1, true) or n:find("event", 1, true) or n:find("ship", 1, true) or n:find("ghost", 1, true)))
 		or n:find("leviathan", 1, true)
 		or n:find("kraken", 1, true)
 end
 
-local function FindSpawnedSeaBeast()
+local function FindSpawnedSeaEvent()
 	local char, _, hrp = GetCharParts()
 	local best = nil
 	local bestDist = math.huge
 
 	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) and IsSeaBeastName(obj.Name) then
+		if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) and IsSeaEventEntityName(obj.Name) then
 			local hum = obj:FindFirstChildOfClass("Humanoid")
 			local part = FindBestPart(obj)
 			if part then
@@ -258,7 +256,7 @@ local function GetScanRoots()
 end
 
 local function ScanMobs(force)
-	if not force and (os.clock() - LastScanTime < 0.35) then
+	if not force and (os.clock() - LastScanTime < 0.34) then
 		return CachedMobsAlive
 	end
 	LastScanTime = os.clock()
@@ -451,7 +449,6 @@ local function TpBypassMove(targetCFrame)
 	pcall(function() hrp.CFrame = targetCFrame end)
 end
 
---// Ataque no ritmo que você já aprovou (0.052s)
 local function PerformAttack(targetEntry)
 	local now = os.clock()
 	if now - LastAttackTime < 0.050 then return end
@@ -491,12 +488,12 @@ local function PerformAttack(targetEntry)
 end
 
 --// ==========================================
---// JANELA RAYFIELD
+--// JANELA RAYFIELD (MESMA ABA)
 --// ==========================================
 local Window = Rayfield:CreateWindow({
 	Name = "Sailor Piece Hub | Sea 2",
 	LoadingTitle = "Carregando Hub...",
-	LoadingSubtitle = "2 Mobs + Nível • Grupos Completos • Sea Beast",
+	LoadingSubtitle = "Auto Mobs + Auto Sea Event",
 	ConfigurationSaving = { Enabled = false },
 	KeySystem = false
 })
@@ -531,14 +528,28 @@ local MobDropdown = MainTab:CreateDropdown({
 })
 
 MainTab:CreateToggle({
-	Name = "Auto Farm Mobs",
+	Name = "Auto Mobs",
 	CurrentValue = false,
-	Flag = "AutoFarmMobsToggle",
+	Flag = "AutoMobsToggle",
 	Callback = function(Value)
-		getgenv().HubConfig.AutoFarmMobs = Value
+		getgenv().HubConfig.AutoMobs = Value
 		if not Value then
 			CurrentTarget = nil
 			CurrentSlotName = nil
+		else
+			RefreshAttackRemotes()
+		end
+	end,
+})
+
+MainTab:CreateToggle({
+	Name = "Auto Sea Event",
+	CurrentValue = false,
+	Flag = "AutoSeaEventToggle",
+	Callback = function(Value)
+		getgenv().HubConfig.AutoSeaEvent = Value
+		if not Value then
+			CurrentSeaTarget = nil
 		else
 			RefreshAttackRemotes()
 		end
@@ -554,40 +565,11 @@ MainTab:CreateToggle({
 	end,
 })
 
-MainTab:CreateToggle({
-	Name = "Auto Attack",
-	CurrentValue = false,
-	Flag = "AutoAttackToggle",
-	Callback = function(Value)
-		getgenv().HubConfig.AutoAttack = Value
-		if Value then
-			RefreshAttackRemotes()
-		end
-	end,
-})
-
 MainTab:CreateButton({
 	Name = "Atualizar Mobs e Níveis",
 	Callback = function()
 		pcall(function() MobDropdown:Refresh(BuildMobOptionsWithLevel()) end)
 		RefreshAttackRemotes()
-	end,
-})
-
---// Outra aba exclusiva para Sea Beast
-local SeaTab = Window:CreateTab("Sea", 4483362458)
-
-SeaTab:CreateToggle({
-	Name = "Auto Sea Beast",
-	CurrentValue = false,
-	Flag = "AutoSeaBeastToggle",
-	Callback = function(Value)
-		getgenv().HubConfig.AutoSeaBeast = Value
-		if not Value then
-			CurrentSeaBeast = nil
-		else
-			RefreshAttackRemotes()
-		end
 	end,
 })
 
@@ -604,7 +586,7 @@ FloorPart.Parent = Workspace
 
 table.insert(ActiveConnections, RunService.Stepped:Connect(function()
 	if not ActiveRunning then return end
-	if not (getgenv().HubConfig.AutoFarmMobs or getgenv().HubConfig.AutoSeaBeast) then
+	if not (getgenv().HubConfig.AutoMobs or getgenv().HubConfig.AutoSeaEvent) then
 		FloorPart.CFrame = CFrame.new(0, -500, 0)
 		return
 	end
@@ -620,53 +602,53 @@ end))
 --// Loop de ataque em 0.052s
 table.insert(ActiveConnections, RunService.Heartbeat:Connect(function()
 	if not ActiveRunning then return end
-	if not (getgenv().HubConfig.AutoAttack or getgenv().HubConfig.AutoFarmMobs or getgenv().HubConfig.AutoSeaBeast) then return end
-	local activeTarget = IsTargetStillAlive(CurrentTarget) and CurrentTarget or (IsSeaBeastAlive(CurrentSeaBeast) and CurrentSeaBeast or nil)
+	if not (getgenv().HubConfig.AutoMobs or getgenv().HubConfig.AutoSeaEvent) then return end
+	local activeTarget = IsTargetStillAlive(CurrentTarget) and CurrentTarget or (IsSeaTargetAlive(CurrentSeaTarget) and CurrentSeaTarget or nil)
 	PerformAttack(activeTarget)
 end))
 
---// Loop principal: Auto Farm Mobs + Auto Sea Beast (só quando spawnar)
+--// Loop principal: Auto Mobs + Auto Sea Event (só quando spawnar)
 task.spawn(function()
 	while ActiveRunning do
 		task.wait(0.035)
 		pcall(function()
-			local autoMobs = getgenv().HubConfig.AutoFarmMobs
-			local autoSea = getgenv().HubConfig.AutoSeaBeast
+			local autoMobs = getgenv().HubConfig.AutoMobs
+			local autoSea = getgenv().HubConfig.AutoSeaEvent
 
 			if not autoMobs and not autoSea then
 				CurrentTarget = nil
 				CurrentSlotName = nil
-				CurrentSeaBeast = nil
+				CurrentSeaTarget = nil
 				return
 			end
 
 			local char, _, hrp = GetCharParts()
 			if not char or not hrp then
 				CurrentTarget = nil
-				CurrentSeaBeast = nil
+				CurrentSeaTarget = nil
 				return
 			end
 
-			-- Prioridade quando Auto Sea Beast está ativo e um Sea Beast spawnou
+			-- Prioridade quando Auto Sea Event está ativo e algum evento/Sea Beast spawnou
 			if autoSea then
-				if IsSeaBeastAlive(CurrentSeaBeast) then
-					local sbPos = (CurrentSeaBeast.hrp.CFrame * CFrame.new(0, 2, getgenv().HubConfig.SeaBeastOffset)).Position
-					TpBypassMove(CFrame.lookAt(sbPos, CurrentSeaBeast.hrp.Position))
-					PerformAttack(CurrentSeaBeast)
+				if IsSeaTargetAlive(CurrentSeaTarget) then
+					local sbPos = (CurrentSeaTarget.hrp.CFrame * CFrame.new(0, 2, getgenv().HubConfig.SeaEventOffset)).Position
+					TpBypassMove(CFrame.lookAt(sbPos, CurrentSeaTarget.hrp.Position))
+					PerformAttack(CurrentSeaTarget)
 					return
 				else
-					CurrentSeaBeast = nil
-					local spawnedSB = FindSpawnedSeaBeast()
-					if spawnedSB then
-						CurrentSeaBeast = spawnedSB
-						local sbPos = (spawnedSB.hrp.CFrame * CFrame.new(0, 2, getgenv().HubConfig.SeaBeastOffset)).Position
-						TpBypassMove(CFrame.lookAt(sbPos, spawnedSB.hrp.Position))
-						PerformAttack(spawnedSB)
+					CurrentSeaTarget = nil
+					local spawnedSea = FindSpawnedSeaEvent()
+					if spawnedSea then
+						CurrentSeaTarget = spawnedSea
+						local sbPos = (spawnedSea.hrp.CFrame * CFrame.new(0, 2, getgenv().HubConfig.SeaEventOffset)).Position
+						TpBypassMove(CFrame.lookAt(sbPos, spawnedSea.hrp.Position))
+						PerformAttack(spawnedSea)
 						return
 					end
 				end
 
-				-- Se Auto Farm Mobs estiver desligado, não puxa você para o mar; fica parado esperando spawnar
+				-- Fica quieto esperando spawnar se Auto Mobs não estiver ativo
 				if not autoMobs then
 					return
 				end
@@ -733,4 +715,27 @@ task.spawn(function()
 						local d = (hrp.Position - m.hrp.Position).Magnitude
 						if d < bestDist then
 							bestDist = d
-				
+							best = m
+						end
+					end
+				end
+				return best
+			end
+
+			local chosenMob = nil
+			local chosenSlotIdx = nil
+
+			for step = 0, count - 1 do
+				local idx = ((SlotTurn + step - 1) % count) + 1
+				local candidate = findNearestForSlot(selected[idx])
+				if candidate then
+					chosenMob = candidate
+					chosenSlotIdx = idx
+					break
+				end
+			end
+
+			if chosenMob then
+				CurrentSlotName = selected[chosenSlotIdx]
+				SlotTurn = (chosenSlotIdx % count) + 1
+		
