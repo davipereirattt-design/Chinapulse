@@ -1,741 +1,704 @@
---// Carrega Rayfield UI
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
---// Serviços
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualUser = game:GetService("VirtualUser")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
---// Limpa instância anterior ao reexecutar
-if getgenv().SailorHubCleanup then
-	pcall(getgenv().SailorHubCleanup)
-end
-
-local ActiveConnections = {}
-local ActiveRunning = true
-
-getgenv().SailorHubCleanup = function()
-	ActiveRunning = false
-	for _, conn in ipairs(ActiveConnections) do
-		pcall(function() conn:Disconnect() end)
-	end
-	table.clear(ActiveConnections)
-	local oldFloor = Workspace:FindFirstChild("HubSafeFloor")
-	if oldFloor then oldFloor:Destroy() end
-end
-
-local function GetCharParts()
-	local char = LocalPlayer.Character
-	if not char then return nil, nil, nil end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	local hrp = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
-	return char, hum, hrp
-end
-
---// Pontos de ilhas/áreas para carregar mobs de outras ilhas via TP Bypass
-local FallbackIslandSpots = {
-	CFrame.new(0, 50, 0),
-	CFrame.new(900, 50, 700),
-	CFrame.new(-900, 50, 700),
-	CFrame.new(1200, 50, -900),
-	CFrame.new(-1200, 50, -900),
-	CFrame.new(1800, 50, 300),
-	CFrame.new(-1800, 50, -300),
-	CFrame.new(300, 50, 1800),
-	CFrame.new(-300, 50, -1800)
-}
-
---// Configurações Globais
-getgenv().HubConfig = {
-	SelectedMobs = {}, -- Até 2 mobs selecionados
-	AutoMobs = false,
-	AutoSeaEvent = false, -- Só vai/ataca quando spawnar Sea Beast / evento de mar (não leva pro mar sozinho)
-	TpBypass = true,
-	SideOffset = 3.5,
-	GroupRadius = 180,
-	SeaEventOffset = 14
-}
-
-local LabelToMobName = {}
-local KnownMobs = {}
-local KnownMobLevels = {}
-local KnownMobPositions = {}
-local CachedMobsAlive = {}
-local CachedAttackRemotes = {}
-local CachedToolRemotes = {}
-local CachedToolRef = nil
-local LastScanTime = 0
-local LastRemoteRefresh = 0
-local LastStreamTime = 0
-local LastAttackTime = 0
-local LastEquipTime = 0
-local LastSpotHopTime = 0
-local SlotTurn = 1
-local FallbackIndex = 1
-local CurrentTarget = nil
-local CurrentSlotName = nil
-local CurrentSeaTarget = nil
-
-local IgnoredKeywords = {
-	"dummy", "damage", "dmg", "test", "testing", "training", "train",
-	"dps", "target", "bag", "punching", "shop", "quest", "vendor"
-}
-
-local function NormalizeName(str)
-	return tostring(str or "")
-		:lower()
-		:gsub("[áàâãä]", "a")
-		:gsub("[éèêë]", "e")
-		:gsub("[íìîï]", "i")
-		:gsub("[óòôõö]", "o")
-		:gsub("[úùûü]", "u")
-		:gsub("[ç]", "c")
-		:gsub("[^%a%d]", "")
-end
-
-local function IsIgnoredModel(obj)
-	if not obj then return true end
-	local n = obj.Name:lower()
-	for _, word in ipairs(IgnoredKeywords) do
-		if n:find(word, 1, true) then
-			return true
-		end
-	end
-	return false
-end
-
-local function ExtractLevel(model, hum)
-	for _, attrName in ipairs({"Level", "Lvl", "MobLevel", "NpcLevel", "Lv"}) do
-		local val = model:GetAttribute(attrName) or (hum and hum:GetAttribute(attrName))
-		if type(val) == "number" and val > 0 then
-			return tostring(math.floor(val))
-		elseif type(val) == "string" then
-			local num = val:match("%d+")
-			if num then return num end
-		end
-	end
-
-	if hum and hum.DisplayName and hum.DisplayName ~= "" then
-		local lvDisp = hum.DisplayName:match("[Ll][Vv]%a*%.?%s*(%d+)") or hum.DisplayName:match("%[(%d+)%]")
-		if lvDisp then return lvDisp end
-	end
-
-	for _, desc in ipairs(model:GetDescendants()) do
-		if desc:IsA("TextLabel") and desc.Text and desc.Text ~= "" then
-			local lvTxt = desc.Text:match("[Ll][Vv]%a*%.?%s*(%d+)") or desc.Text:match("%[(%d+)%]") or desc.Text:match("^%d+$")
-			if lvTxt then return lvTxt end
-		end
-	end
-
-	return nil
-end
-
-local function FindBestPart(model)
-	if not model then return nil end
-	local hrp = model:FindFirstChild("HumanoidRootPart")
-		or model:FindFirstChild("Torso")
-		or model:FindFirstChild("UpperTorso")
-		or model:FindFirstChild("Head")
-		or model.PrimaryPart
-	if hrp and hrp:IsA("BasePart") then
-		return hrp
-	end
-	for _, desc in ipairs(model:GetDescendants()) do
-		if desc:IsA("BasePart") then
-			return desc
-		end
-	end
-	return nil
-end
-
-local function IsTargetStillAlive(entry)
-	if not entry then return false end
-	local model = entry.model
-	local hum = entry.hum
-	local hrp = entry.hrp
-	if not model or not model.Parent or not model:IsDescendantOf(Workspace) then
-		return false
-	end
-	if not hrp or not hrp.Parent then
-		return false
-	end
-	if not hum or not hum.Parent then
-		return false
-	end
-	if hum.Health <= 0 then
-		return false
-	end
-	return true
-end
-
-local function IsSeaTargetAlive(entry)
-	if not entry then return false end
-	local model = entry.model
-	local part = entry.hrp
-	if not model or not model.Parent or not model:IsDescendantOf(Workspace) then
-		return false
-	end
-	if not part or not part.Parent then
-		return false
-	end
-	local hum = entry.hum
-	if hum and hum.Parent and hum.Health <= 0 then
-		return false
-	end
-	local hpAttr = model:GetAttribute("Health") or model:GetAttribute("HP")
-	if type(hpAttr) == "number" and hpAttr <= 0 then
-		return false
-	end
-	return true
-end
-
-local function IsSeaEventEntityName(nameStr)
-	local n = NormalizeName(nameStr)
-	return n:find("seabeast", 1, true)
-		or n:find("seabest", 1, true)
-		or n:find("seaevent", 1, true)
-		or n:find("beastsea", 1, true)
-		or (n:find("sea", 1, true) and (n:find("beast", 1, true) or n:find("event", 1, true) or n:find("ship", 1, true) or n:find("ghost", 1, true)))
-		or n:find("leviathan", 1, true)
-		or n:find("kraken", 1, true)
-end
-
-local function FindSpawnedSeaEvent()
-	local char, _, hrp = GetCharParts()
-	local best = nil
-	local bestDist = math.huge
-
-	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) and IsSeaEventEntityName(obj.Name) then
-			local hum = obj:FindFirstChildOfClass("Humanoid")
-			local part = FindBestPart(obj)
-			if part then
-				local hpOk = true
-				if hum and hum.Health <= 0 then
-					hpOk = false
-				end
-				local hpAttr = obj:GetAttribute("Health") or obj:GetAttribute("HP")
-				if type(hpAttr) == "number" and hpAttr <= 0 then
-					hpOk = false
-				end
-
-				if hpOk then
-					local dist = hrp and (hrp.Position - part.Position).Magnitude or 0
-					if dist < bestDist then
-						bestDist = dist
-						best = {
-							name = obj.Name,
-							model = obj,
-							hum = hum,
-							hrp = part
-						}
-					end
-				end
-			end
-		end
-	end
-
-	return best
-end
-
-local function GetScanRoots()
-	local roots = {}
-	for _, folderName in ipairs({"Enemies", "Mobs", "Monsters", "NPCs"}) do
-		local folder = Workspace:FindFirstChild(folderName)
-		if folder then
-			table.insert(roots, folder)
-		end
-	end
-	if #roots == 0 then
-		table.insert(roots, Workspace)
-	end
-	return roots
-end
-
-local function ScanMobs(force)
-	if not force and (os.clock() - LastScanTime < 0.34) then
-		return CachedMobsAlive
-	end
-	LastScanTime = os.clock()
-
-	local alive = {}
-	local seenModels = {}
-
-	for _, root in ipairs(GetScanRoots()) do
-		for _, obj in ipairs(root:GetDescendants()) do
-			if obj:IsA("Model") and not seenModels[obj] and not IsIgnoredModel(obj) and not Players:GetPlayerFromCharacter(obj) then
-				seenModels[obj] = true
-				local hum = obj:FindFirstChildOfClass("Humanoid")
-				local part = FindBestPart(obj)
-				if hum and part then
-					local cleanName = tostring(obj.Name):gsub("^%s+", ""):gsub("%s+$", "")
-					if cleanName ~= "" then
-						local lv = ExtractLevel(obj, hum)
-						if lv then
-							KnownMobLevels[cleanName] = lv
-							KnownMobLevels[NormalizeName(cleanName)] = lv
-						end
-
-						KnownMobs[cleanName] = true
-						KnownMobPositions[NormalizeName(cleanName)] = part.CFrame
-
-						if hum.Health > 0 then
-							table.insert(alive, {
-								name = cleanName,
-								level = lv or KnownMobLevels[cleanName] or KnownMobLevels[NormalizeName(cleanName)] or "?",
-								model = obj,
-								hum = hum,
-								hrp = part
-							})
-						end
-					end
-				end
-			end
-		end
-	end
-
-	CachedMobsAlive = alive
-	return alive
-end
-
-local function BuildMobOptionsWithLevel()
-	table.clear(LabelToMobName)
-	local alive = ScanMobs(true)
-
-	local uniqueByNorm = {}
-	for mobName in pairs(KnownMobs) do
-		local norm = NormalizeName(mobName)
-		if norm ~= "" and not uniqueByNorm[norm] then
-			uniqueByNorm[norm] = mobName
-		end
-	end
-	for _, m in ipairs(alive) do
-		local norm = NormalizeName(m.name)
-		if norm ~= "" and not uniqueByNorm[norm] then
-			uniqueByNorm[norm] = m.name
-		end
-	end
-
-	local sorted = {}
-	for _, realName in pairs(uniqueByNorm) do
-		table.insert(sorted, realName)
-	end
-	table.sort(sorted, function(a, b)
-		return a:lower() < b:lower()
-	end)
-
-	local options = {}
-	for _, realName in ipairs(sorted) do
-		local lv = KnownMobLevels[realName] or KnownMobLevels[NormalizeName(realName)] or "?"
-		local label = realName .. " [Lv." .. tostring(lv) .. "]"
-		LabelToMobName[label] = realName
-		LabelToMobName[realName] = realName
-		table.insert(options, label)
-	end
-
-	return options
-end
-
-local function MatchesMobName(mobName, wantedName)
-	if not mobName or not wantedName then return false end
-	local mNorm = NormalizeName(mobName)
-	local wNorm = NormalizeName(wantedName)
-	if mNorm == "" or wNorm == "" then return false end
-	if mNorm == wNorm or mNorm:find(wNorm, 1, true) or wNorm:find(mNorm, 1, true) then
-		return true
-	end
-	local mBase = mNorm:gsub("%d+$", "")
-	local wBase = wNorm:gsub("%d+$", "")
-	return #wBase >= 4 and mBase == wBase
-end
-
-local function IsCombatEventName(nameLower)
-	return nameLower:find("combat")
-		or nameLower:find("attack")
-		or nameLower:find("hit")
-		or nameLower:find("m1")
-		or nameLower:find("swing")
-		or nameLower:find("punch")
-		or nameLower:find("slash")
-		or nameLower:find("sword")
-		or nameLower:find("melee")
-end
-
-local function RefreshAttackRemotes()
-	if os.clock() - LastRemoteRefresh < 30 and #CachedAttackRemotes > 0 then
-		return
-	end
-	LastRemoteRefresh = os.clock()
-	local list = {}
-
-	for _, rem in ipairs(ReplicatedStorage:GetDescendants()) do
-		if rem:IsA("RemoteEvent") and IsCombatEventName(rem.Name:lower()) then
-			table.insert(list, rem)
-		end
-	end
-
-	CachedAttackRemotes = list
-end
-
-local function GetToolEvents(tool)
-	if CachedToolRef == tool and tool ~= nil then
-		return CachedToolRemotes
-	end
-	CachedToolRef = tool
-	table.clear(CachedToolRemotes)
-	if tool then
-		for _, desc in ipairs(tool:GetDescendants()) do
-			if desc:IsA("RemoteEvent") then
-				table.insert(CachedToolRemotes, desc)
-			end
-		end
-	end
-	return CachedToolRemotes
-end
-
-local function EnsureWeaponEquipped(char, hum)
-	if not char then return nil end
-	local equipped = char:FindFirstChildOfClass("Tool")
-	if equipped then return equipped end
-
-	if os.clock() - LastEquipTime < 0.25 then return nil end
-	LastEquipTime = os.clock()
-
-	local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-	if backpack and hum then
-		for _, item in ipairs(backpack:GetChildren()) do
-			if item:IsA("Tool") then
-				pcall(function() hum:EquipTool(item) end)
-				break
-			end
-		end
-	end
-	return char:FindFirstChildOfClass("Tool")
-end
-
-local function TpBypassMove(targetCFrame)
-	local char, hum, hrp = GetCharParts()
-	if not char or not hrp or not targetCFrame then return end
-
-	if not getgenv().HubConfig.TpBypass then
-		local dist = (hrp.Position - targetCFrame.Position).Magnitude
-		if dist > 120 then return end
-	end
-
-	pcall(function()
-		if hum then
-			if hum.Sit then hum.Sit = false end
-			hum.PlatformStand = false
-			hum:ChangeState(Enum.HumanoidStateType.Running)
-		end
-		if LocalPlayer.RequestStreamAroundAsync and (os.clock() - LastStreamTime > 0.25) then
-			LastStreamTime = os.clock()
-			LocalPlayer:RequestStreamAroundAsync(targetCFrame.Position)
-		end
-	end)
-
-	for _, part in ipairs(char:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.AssemblyLinearVelocity = Vector3.zero
-			part.AssemblyAngularVelocity = Vector3.zero
-			part.CanCollide = false
-		end
-	end
-
-	pcall(function() char:PivotTo(targetCFrame) end)
-	pcall(function() hrp.CFrame = targetCFrame end)
-end
-
-local function PerformAttack(targetEntry)
-	local now = os.clock()
-	if now - LastAttackTime < 0.050 then return end
-	LastAttackTime = now
-
-	local char, hum = GetCharParts()
-	if not char then return end
-
-	local tool = EnsureWeaponEquipped(char, hum)
-	local tModel = targetEntry and targetEntry.model
-	local tHRP = targetEntry and targetEntry.hrp
-	local tPos = tHRP and tHRP.Position
-
-	if tool then
-		pcall(function() tool:Activate() end)
-		local tEvents = GetToolEvents(tool)
-		for i = 1, #tEvents do
-			local ev = tEvents[i]
-			pcall(function()
-				ev:FireServer()
-				if tPos then
-					ev:FireServer(tPos, tModel)
-				end
-			end)
-		end
-	end
-
-	for i = 1, #CachedAttackRemotes do
-		local rem = CachedAttackRemotes[i]
+-- Anti-AFK para sessões longas
+pcall(function()
+	LocalPlayer.Idled:Connect(function()
 		pcall(function()
-			rem:FireServer()
-			if tPos then
-				rem:FireServer(tPos, tModel)
-			end
+			VirtualUser:CaptureController()
+			VirtualUser:ClickButton2(Vector2.new())
+		end)
+	end)
+end)
+
+local Window = Rayfield:CreateWindow({
+	Name = "Sailor Piece - Sea 2",
+	LoadingTitle = "Sailor Piece",
+	LoadingSubtitle = "Sea 2 • Câmera Lisa + Kraken & Sea Serpent",
+	ConfigurationSaving = {
+		Enabled = false
+	},
+	KeySystem = false
+})
+
+local DadosMobsSea2 = {
+	{ label = "Delinquent [Lv. 12.750]", nome = "Delinquent" },
+	{ label = "Strong Fighter [Lv. 13.000]", nome = "Strong Fighter" },
+	{ label = "Strong Bandit [Lv. 13.500]", nome = "Strong Bandit" },
+	{ label = "Fast Ninja [Lv. 14.500]", nome = "Fast Ninja" },
+	{ label = "Spirit Fighter [Lv. 16.000]", nome = "Spirit Fighter" },
+	{ label = "Strong Slayer [Lv. 18.000]", nome = "Strong Slayer" },
+	{ label = "Ghoul Member [Lv. 18.500]", nome = "Ghoul Member" }
+}
+
+local OpcoesMobsLabel = {}
+local MapaMobPorLabel = {}
+for _, item in ipairs(DadosMobsSea2) do
+	table.insert(OpcoesMobsLabel, item.label)
+	MapaMobPorLabel[item.label] = item
+end
+
+local Estado = {
+	AutoFarm = false,
+	AutoSeaBeast = false,
+	AutoAttack = false,
+	FastAttack = true,
+	AutoAtivarPlaca = false,
+	AtivandoPlacaAgora = false,
+	MobsSelecionados = { DadosMobsSea2[1].label },
+	IndiceFila = 1,
+	PosicaoSalvaPorMob = {},
+	DistanciaFarm = 14,
+	AlturaFarm = 12
+}
+
+local RemotesAtaqueCache = {}
+local UltimoScanRemotes = 0
+local UltimoAtaque = 0
+local UltimoStatusTexto = ""
+local StatusParagraph
+local PlacasFeitas = setmetatable({}, { __mode = "k" })
+
+local function AtualizarStatus(texto)
+	if texto == UltimoStatusTexto then return end
+	UltimoStatusTexto = texto
+	if StatusParagraph then
+		pcall(function()
+			StatusParagraph:Set({
+				Title = "Status Atual",
+				Content = texto
+			})
 		end)
 	end
 end
 
---// ==========================================
---// JANELA RAYFIELD (MESMA ABA)
---// ==========================================
-local Window = Rayfield:CreateWindow({
-	Name = "Sailor Piece Hub | Sea 2",
-	LoadingTitle = "Carregando Hub...",
-	LoadingSubtitle = "Auto Mobs + Auto Sea Event",
-	ConfigurationSaving = { Enabled = false },
-	KeySystem = false
-})
+local function UsuarioEstaDigitando()
+	local ok, caixaFocada = pcall(function()
+		return UserInputService:GetFocusedTextBox()
+	end)
+	return ok and caixaFocada ~= nil
+end
 
-local MainTab = Window:CreateTab("Main", 4483362458)
+local function GetChar()
+	return LocalPlayer.Character
+end
 
-local MobDropdown = MainTab:CreateDropdown({
-	Name = "Selecionar até 2 Mobs (Com Nível)",
-	Options = BuildMobOptionsWithLevel(),
-	CurrentOption = {},
-	MultipleOptions = true,
-	Flag = "SelectTwoMobsWithLv",
-	Callback = function(SelectedOptions)
-		local list = {}
-		local seen = {}
-		for _, item in ipairs(SelectedOptions or {}) do
-			local realName = LabelToMobName[item] or tostring(item):gsub("%s*%[Lv%.[^%]]+%]$", "")
-			local norm = NormalizeName(realName)
-			if norm ~= "" and not seen[norm] then
-				seen[norm] = true
-				table.insert(list, realName)
-				if #list >= 2 then
-					break
+local function GetHRP()
+	local char = GetChar()
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHum()
+	local char = GetChar()
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function LimparFisica(hrp)
+	if not hrp then return end
+	pcall(function()
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		hrp.Velocity = Vector3.zero
+		hrp.RotVelocity = Vector3.zero
+	end)
+end
+
+local function EstaPausado()
+	local ok, res = pcall(function()
+		return RunService:IsPaused()
+	end)
+	return ok and res == true
+end
+
+local function CarregarRegiao(pos)
+	if not pos then return end
+	pcall(function()
+		LocalPlayer:RequestStreamAroundAsync(pos, 1)
+	end)
+end
+
+local function ObterRemotesCombate()
+	if os.clock() - UltimoScanRemotes < 40 then
+		return RemotesAtaqueCache
+	end
+	UltimoScanRemotes = os.clock()
+	table.clear(RemotesAtaqueCache)
+
+	pcall(function()
+		for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+			if obj:IsA("RemoteEvent") then
+				local n = obj.Name:lower()
+				local ehVfx = n:find("vfx") or n:find("effect") or n:find("particle") or n:find("sound") or n:find("fx")
+				local ehCombate = n:find("combat") or n:find("attack") or n:find("punch") or n:find("hit") or n:find("m1") or n:find("slash") or n:find("swing") or n:find("damage")
+				if ehCombate and not ehVfx then
+					table.insert(RemotesAtaqueCache, obj)
 				end
 			end
 		end
-		getgenv().HubConfig.SelectedMobs = list
-		CurrentTarget = nil
-		CurrentSlotName = nil
-		SlotTurn = 1
-	end,
-})
+	end)
+	return RemotesAtaqueCache
+end
 
-MainTab:CreateToggle({
-	Name = "Auto Mobs",
-	CurrentValue = false,
-	Flag = "AutoMobsToggle",
-	Callback = function(Value)
-		getgenv().HubConfig.AutoMobs = Value
-		if not Value then
-			CurrentTarget = nil
-			CurrentSlotName = nil
+local function AplicarPosicaoUnica(char, hrp, hum, destinoPos, olharPara)
+	if hum then
+		pcall(function()
+			hum.Sit = false
+			hum.PlatformStand = false
+			local estado = hum:GetState()
+			if estado == Enum.HumanoidStateType.FallingDown or estado == Enum.HumanoidStateType.Ragdoll then
+				hum:ChangeState(Enum.HumanoidStateType.Running)
+			end
+		end)
+	end
+
+	local cf
+	if olharPara then
+		local alvoOlhar = Vector3.new(olharPara.X, destinoPos.Y, olharPara.Z)
+		if (alvoOlhar - destinoPos).Magnitude > 0.05 then
+			cf = CFrame.lookAt(destinoPos, alvoOlhar)
 		else
-			RefreshAttackRemotes()
+			cf = CFrame.new(destinoPos)
 		end
-	end,
-})
+	else
+		cf = CFrame.new(destinoPos)
+	end
 
-MainTab:CreateToggle({
-	Name = "Auto Sea Event",
-	CurrentValue = false,
-	Flag = "AutoSeaEventToggle",
-	Callback = function(Value)
-		getgenv().HubConfig.AutoSeaEvent = Value
-		if not Value then
-			CurrentSeaTarget = nil
-		else
-			RefreshAttackRemotes()
+	pcall(function() hrp.CFrame = cf end)
+	LimparFisica(hrp)
+end
+
+local function TPNoAlvo(destinoPos, olharPara, carregarStream)
+	local char = GetChar()
+	local hrp = GetHRP()
+	local hum = GetHum()
+	if not char or not hrp or not destinoPos then return end
+	if destinoPos.X ~= destinoPos.X or destinoPos.Y ~= destinoPos.Y or destinoPos.Z ~= destinoPos.Z then return end
+
+	if EstaPausado() then
+		local espera = 0
+		while EstaPausado() and espera < 2 do
+			espera += task.wait(0.1)
 		end
-	end,
-})
+	end
 
-MainTab:CreateToggle({
-	Name = "TP Bypass",
-	CurrentValue = true,
-	Flag = "TpBypassToggle",
-	Callback = function(Value)
-		getgenv().HubConfig.TpBypass = Value
-	end,
-})
+	local distInicial = (destinoPos - hrp.Position).Magnitude
 
-MainTab:CreateButton({
-	Name = "Atualizar Mobs e Níveis",
-	Callback = function()
-		pcall(function() MobDropdown:Refresh(BuildMobOptionsWithLevel()) end)
-		RefreshAttackRemotes()
-	end,
-})
-
-RefreshAttackRemotes()
-
---// Piso seguro leve
-local FloorPart = Instance.new("Part")
-FloorPart.Name = "HubSafeFloor"
-FloorPart.Size = Vector3.new(20, 1, 20)
-FloorPart.Transparency = 1
-FloorPart.Anchored = true
-FloorPart.CanCollide = true
-FloorPart.Parent = Workspace
-
-table.insert(ActiveConnections, RunService.Stepped:Connect(function()
-	if not ActiveRunning then return end
-	if not (getgenv().HubConfig.AutoMobs or getgenv().HubConfig.AutoSeaEvent) then
-		FloorPart.CFrame = CFrame.new(0, -500, 0)
+	if distInicial <= 2.5 then
+		LimparFisica(hrp)
 		return
 	end
 
-	local _, _, hrp = GetCharParts()
-	if hrp then
-		hrp.AssemblyLinearVelocity = Vector3.zero
-		hrp.AssemblyAngularVelocity = Vector3.zero
-		FloorPart.CFrame = hrp.CFrame * CFrame.new(0, -3.5, 0)
+	if carregarStream and distInicial > 250 then
+		pcall(CarregarRegiao, destinoPos)
 	end
-end))
 
---// Loop de ataque em 0.052s
-table.insert(ActiveConnections, RunService.Heartbeat:Connect(function()
-	if not ActiveRunning then return end
-	if not (getgenv().HubConfig.AutoMobs or getgenv().HubConfig.AutoSeaEvent) then return end
-	local activeTarget = IsTargetStillAlive(CurrentTarget) and CurrentTarget or (IsSeaTargetAlive(CurrentSeaTarget) and CurrentSeaTarget or nil)
-	PerformAttack(activeTarget)
-end))
+	AplicarPosicaoUnica(char, hrp, hum, destinoPos, olharPara)
 
---// Loop principal: Auto Mobs + Auto Sea Event (só quando spawnar)
-task.spawn(function()
-	while ActiveRunning do
-		task.wait(0.035)
+	if distInicial > 90 then
+		for _ = 1, 3 do
+			char = GetChar()
+			hrp = GetHRP()
+			hum = GetHum()
+			if not char or not hrp then break end
+			if (destinoPos - hrp.Position).Magnitude <= 16 then break end
+			if carregarStream then
+				pcall(CarregarRegiao, destinoPos)
+			end
+			AplicarPosicaoUnica(char, hrp, hum, destinoPos, olharPara)
+			task.wait(0.05)
+		end
+	end
+end
+
+local function CalcularOffsetAtaque(alvoPos)
+	local distAlcance = math.clamp(Estado.DistanciaFarm, 4, 60)
+	local altura = Estado.AlturaFarm
+	return alvoPos + Vector3.new(0, altura, -distAlcance)
+end
+
+local function MobEstaVivo(mob, mobHRP, mobHum)
+	return mob ~= nil
+		and mob.Parent ~= nil
+		and mobHRP ~= nil
+		and mobHRP.Parent ~= nil
+		and mobHum ~= nil
+		and mobHum.Parent ~= nil
+		and mobHum.Health > 0
+end
+
+local function ObterPosicaoModelo(obj)
+	if not obj or not obj.Parent then return nil end
+	if obj:IsA("Model") then
+		local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
+		if root and root:IsA("BasePart") then
+			return root.Position
+		end
+		local ok, cf = pcall(function() return obj:GetPivot() end)
+		if ok and cf then
+			return cf.Position
+		end
+	elseif obj:IsA("BasePart") then
+		return obj.Position
+	else
+		local p = obj.Parent
+		if p and p:IsA("BasePart") then
+			return p.Position
+		elseif p and p:IsA("Model") then
+			local root = p:FindFirstChild("HumanoidRootPart") or p.PrimaryPart or p:FindFirstChildWhichIsA("BasePart", true)
+			if root and root:IsA("BasePart") then
+				return root.Position
+			end
+		end
+	end
+	return nil
+end
+
+local function ModeloCombinaComChaves(obj, chaves, buscarLabels)
+	local nomeLower = obj.Name:lower()
+	for _, chave in ipairs(chaves) do
+		if nomeLower:find(chave, 1, true) then
+			return true
+		end
+	end
+
+	local hum = obj:FindFirstChildOfClass("Humanoid")
+	if hum and hum.DisplayName and hum.DisplayName ~= "" then
+		local dispLower = hum.DisplayName:lower()
+		for _, chave in ipairs(chaves) do
+			if dispLower:find(chave, 1, true) then
+				return true
+			end
+		end
+	end
+
+	if buscarLabels then
+		for _, desc in ipairs(obj:GetDescendants()) do
+			if desc:IsA("TextLabel") and desc.Text ~= "" then
+				local txtLower = desc.Text:lower()
+				for _, chave in ipairs(chaves) do
+					if txtLower:find(chave, 1, true) then
+						return true
+					end
+				end
+			end
+		end
+	end
+
+	return false
+end
+
+local function AlvoMaritimoAtivo(obj)
+	if not obj or not obj.Parent or not obj:IsA("Model") then return false end
+	if Players:GetPlayerFromCharacter(obj) then return false end
+
+	local hum = obj:FindFirstChildOfClass("Humanoid")
+	if hum then
+		return hum.Health > 0
+	end
+
+	local hpAttr = obj:GetAttribute("Health") or obj:GetAttribute("HP")
+	if typeof(hpAttr) == "number" then
+		return hpAttr > 0
+	end
+
+	return ObterPosicaoModelo(obj) ~= nil
+end
+
+local function EncontrarSeaBeastOuKraken()
+	local chaves = {"kraken", "sea serpent", "seaserpent"}
+	local charPlayer = GetChar()
+	local hrpPlayer = GetHRP()
+
+	local melhorObj = nil
+	local melhorPos = nil
+	local menorDist = math.huge
+
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if obj:IsA("Model") and obj ~= charPlayer and not (charPlayer and obj:IsDescendantOf(charPlayer)) then
+			if AlvoMaritimoAtivo(obj) and ModeloCombinaComChaves(obj, chaves, true) then
+				local pos = ObterPosicaoModelo(obj)
+				if pos then
+					local d = hrpPlayer and (hrpPlayer.Position - pos).Magnitude or 0
+					if d < menorDist then
+						menorDist = d
+						melhorObj = obj
+						melhorPos = pos
+					end
+				end
+			end
+		end
+	end
+
+	return melhorObj, melhorPos
+end
+
+pcall(function()
+	LocalPlayer.CharacterAdded:Connect(function(novoChar)
+		if not Estado.AutoSeaBeast then return end
+		task.spawn(function()
+			local hrp = novoChar:WaitForChild("HumanoidRootPart", 10)
+			if not hrp then return end
+			task.wait(0.35)
+			if not Estado.AutoSeaBeast then return end
+
+			local beastObj, beastPos = EncontrarSeaBeastOuKraken()
+			if beastObj and beastPos then
+				AtualizarStatus("Respawnou! Indo para: " .. beastObj.Name)
+				TPNoAlvo(CalcularOffsetAtaque(beastPos), beastPos, true)
+			end
+		end)
+	end)
+end)
+
+local function EncontrarMobVivo(nomeBusca)
+	if not nomeBusca or nomeBusca == "" then return nil end
+	local alvo = nomeBusca:lower()
+	local hrpPlayer = GetHRP()
+	local charPlayer = GetChar()
+
+	local melhorMob, melhorHRP, melhorHum = nil, nil, nil
+	local menorDist = math.huge
+
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if obj:IsA("Model") and obj ~= charPlayer and not Players:GetPlayerFromCharacter(obj) then
+			local hum = obj:FindFirstChildOfClass("Humanoid")
+			local hrp = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+			if MobEstaVivo(obj, hrp, hum) and ModeloCombinaComChaves(obj, {alvo}, false) then
+				local d = hrpPlayer and (hrpPlayer.Position - hrp.Position).Magnitude or 0
+				if d < menorDist then
+					menorDist = d
+					melhorMob, melhorHRP, melhorHum = obj, hrp, hum
+				end
+			end
+		end
+	end
+
+	return melhorMob, melhorHRP, melhorHum
+end
+
+local function EquiparArma()
+	local char = GetChar()
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	if not char or not backpack then return nil end
+
+	local toolEquipada = char:FindFirstChildWhichIsA("Tool")
+	if toolEquipada then return toolEquipada end
+
+	for _, item in ipairs(backpack:GetChildren()) do
+		if item:IsA("Tool") then
+			pcall(function() item.Parent = char end)
+			return item
+		end
+	end
+	return nil
+end
+
+local function ExecutarAtaque(usarCliqueVirtual)
+	if UsuarioEstaDigitando() then return end
+
+	local intervaloMinimo = Estado.FastAttack and 0.14 or 0.24
+	if os.clock() - UltimoAtaque < intervaloMinimo then
+		return
+	end
+	UltimoAtaque = os.clock()
+
+	local char = GetChar()
+	if not char then return end
+
+	local tool = EquiparArma()
+	if tool then
+		pcall(function() tool:Activate() end)
+	end
+
+	local remotesCombate = ObterRemotesCombate()
+	for _, remote in ipairs(remotesCombate) do
+		if remote and remote.Parent then
+			pcall(function() remote:FireServer() end)
+		end
+	end
+
+	if usarCliqueVirtual and not UsuarioEstaDigitando() then
 		pcall(function()
-			local autoMobs = getgenv().HubConfig.AutoMobs
-			local autoSea = getgenv().HubConfig.AutoSeaEvent
+			local cam = Workspace.CurrentCamera
+			local centro = cam and (cam.ViewportSize * 0.5) or Vector2.new(400, 240)
+			VirtualUser:CaptureController()
+			VirtualUser:Button1Down(centro)
+			VirtualUser:Button1Up(centro)
+		end)
+	end
+end
 
-			if not autoMobs and not autoSea then
-				CurrentTarget = nil
-				CurrentSlotName = nil
-				CurrentSeaTarget = nil
-				return
+local function AvancarParaProximoMob()
+	if #Estado.MobsSelecionados > 1 then
+		Estado.IndiceFila = (Estado.IndiceFila % #Estado.MobsSelecionados) + 1
+	else
+		Estado.IndiceFila = 1
+	end
+end
+
+local function CliqueTela()
+	pcall(function()
+		local cam = Workspace.CurrentCamera
+		local centro = cam and (cam.ViewportSize * 0.5) or Vector2.new(400, 240)
+		VirtualUser:CaptureController()
+		VirtualUser:Button1Down(centro)
+		task.wait(0.01)
+		VirtualUser:Button1Up(centro)
+	end)
+end
+
+local function RodarPlacas()
+	local hrp = GetHRP()
+	if not hrp then Estado.AtivandoPlacaAgora = false return end
+	local agora = os.clock()
+	for _, d in ipairs(Workspace:GetDescendants()) do
+		if not Estado.AutoAtivarPlaca then break end
+		if (d:IsA("ProximityPrompt") and d.Enabled) or d:IsA("ClickDetector") then
+			local n = d.Name:lower()
+			if not (n:find("shop") or n:find("vendor") or n:find("quest") or n:find("spawn")) then
+				local feito = PlacasFeitas[d]
+				if not feito or (agora - feito) > 3 then
+					local pos = ObterPosicaoModelo(d)
+					if pos and (hrp.Position - pos).Magnitude <= 900 then
+						Estado.AtivandoPlacaAgora = true
+						AtualizarStatus("Placa...")
+						TPNoAlvo(pos, pos, false)
+						task.wait(0.05)
+						if d:IsA("ProximityPrompt") then
+							pcall(function()
+								d.HoldDuration = 0
+								d.RequiresLineOfSight = false
+								d.MaxActivationDistance = math.max(d.MaxActivationDistance or 15, 30)
+							end)
+							if typeof(fireproximityprompt) == "function" then pcall(fireproximityprompt, d, 0) end
+							pcall(function() d:InputHoldBegin() task.wait(0.03) d:InputHoldEnd() end)
+						elseif d:IsA("ClickDetector") then
+							if typeof(fireclickdetector) == "function" then pcall(fireclickdetector, d, 0) end
+							CliqueTela()
+						end
+						PlacasFeitas[d] = os.clock()
+					end
+				end
 			end
+		end
+	end
+	Estado.AtivandoPlacaAgora = false
+end
 
-			local char, _, hrp = GetCharParts()
-			if not char or not hrp then
-				CurrentTarget = nil
-				CurrentSeaTarget = nil
-				return
+task.spawn(function()
+	while true do
+		pcall(function()
+			if Estado.AutoAtivarPlaca and not EstaPausado() then
+				RodarPlacas()
+			else
+				Estado.AtivandoPlacaAgora = false
 			end
+		end)
+		task.wait(0.18)
+	end
+end)
 
-			-- Prioridade quando Auto Sea Event está ativo e algum evento/Sea Beast spawnou
-			if autoSea then
-				if IsSeaTargetAlive(CurrentSeaTarget) then
-					local sbPos = (CurrentSeaTarget.hrp.CFrame * CFrame.new(0, 2, getgenv().HubConfig.SeaEventOffset)).Position
-					TpBypassMove(CFrame.lookAt(sbPos, CurrentSeaTarget.hrp.Position))
-					PerformAttack(CurrentSeaTarget)
-					return
+-- Loop Auto Attack
+task.spawn(function()
+	while true do
+		if Estado.AutoAttack and not Estado.AtivandoPlacaAgora and not EstaPausado() and not UsuarioEstaDigitando() then
+			pcall(ExecutarAtaque, false)
+			task.wait(Estado.FastAttack and 0.14 or 0.24)
+		else
+			task.wait(0.25)
+		end
+	end
+end)
+
+-- Loop Auto Sea Beast: fica em repouso leve enquanto não há Kraken nem Sea Serpent
+task.spawn(function()
+	while true do
+		if Estado.AutoSeaBeast and not Estado.AtivandoPlacaAgora and not EstaPausado() then
+			local beastObj, beastPos = EncontrarSeaBeastOuKraken()
+			if beastObj and beastPos then
+				AtualizarStatus("Matando: " .. beastObj.Name)
+				TPNoAlvo(CalcularOffsetAtaque(beastPos), beastPos, true)
+
+				local ultimoCheckAlvo = os.clock()
+				while Estado.AutoSeaBeast and not Estado.AtivandoPlacaAgora and not EstaPausado() and AlvoMaritimoAtivo(beastObj) do
+					local hum = GetHum()
+					if not hum or hum.Health <= 0 then
+						break
+					end
+					local posAtual = ObterPosicaoModelo(beastObj)
+					if not posAtual then break end
+					local posAtaque = CalcularOffsetAtaque(posAtual)
+					TPNoAlvo(posAtaque, posAtual, false)
+					pcall(ExecutarAtaque, true)
+					task.wait(Estado.FastAttack and 0.14 or 0.24)
+
+					if os.clock() - ultimoCheckAlvo >= 0.75 then
+						ultimoCheckAlvo = os.clock()
+						if not AlvoMaritimoAtivo(beastObj) then
+							break
+						end
+					end
+				end
+
+				if Estado.AutoSeaBeast then
+					AtualizarStatus("Aguardando Kraken ou Sea Serpent...")
+				end
+			else
+				AtualizarStatus("Aguardando Kraken ou Sea Serpent...")
+				task.wait(1.0)
+			end
+		else
+			task.wait(0.35)
+		end
+	end
+end)
+
+-- Loop Auto Farm
+task.spawn(function()
+	while true do
+		if Estado.AutoFarm and not Estado.AutoSeaBeast and not Estado.AtivandoPlacaAgora and not EstaPausado() then
+			local selecionados = Estado.MobsSelecionados
+			if not selecionados or #selecionados == 0 then
+				task.wait(0.25)
+			else
+				if Estado.IndiceFila > #selecionados then
+					Estado.IndiceFila = 1
+				end
+
+				local labelAlvo = selecionados[Estado.IndiceFila]
+				local infoMob = MapaMobPorLabel[labelAlvo]
+				if not infoMob then
+					Estado.IndiceFila = 1
+					task.wait(0.2)
 				else
-					CurrentSeaTarget = nil
-					local spawnedSea = FindSpawnedSeaEvent()
-					if spawnedSea then
-						CurrentSeaTarget = spawnedSea
-						local sbPos = (spawnedSea.hrp.CFrame * CFrame.new(0, 2, getgenv().HubConfig.SeaEventOffset)).Position
-						TpBypassMove(CFrame.lookAt(sbPos, spawnedSea.hrp.Position))
-						PerformAttack(spawnedSea)
-						return
-					end
-				end
+					local mob, mobHRP, mobHum = EncontrarMobVivo(infoMob.nome)
 
-				-- Fica quieto esperando spawnar se Auto Mobs não estiver ativo
-				if not autoMobs then
-					return
-				end
-			end
+					if not mob and Estado.PosicaoSalvaPorMob[infoMob.nome] then
+						local posDestino = Estado.PosicaoSalvaPorMob[infoMob.nome]
+						AtualizarStatus("TP -> " .. infoMob.nome)
+						TPNoAlvo(posDestino, nil, true)
 
-			if not autoMobs then
-				CurrentTarget = nil
-				CurrentSlotName = nil
-				return
-			end
-
-			local selected = getgenv().HubConfig.SelectedMobs
-			if type(selected) ~= "table" or #selected == 0 then
-				CurrentTarget = nil
-				CurrentSlotName = nil
-				return
-			end
-
-			local count = math.min(2, #selected)
-
-			-- 1) Termina de matar o alvo atual até o fim
-			if IsTargetStillAlive(CurrentTarget) then
-				KnownMobPositions[NormalizeName(CurrentTarget.name)] = CurrentTarget.hrp.CFrame
-				local sidePos = (CurrentTarget.hrp.CFrame * CFrame.new(getgenv().HubConfig.SideOffset, 0, 0)).Position
-				TpBypassMove(CFrame.lookAt(sidePos, CurrentTarget.hrp.Position))
-				PerformAttack(CurrentTarget)
-				return
-			end
-
-			-- 2) Alvo atual morreu: vai rápido para o próximo companheiro do mesmo grupinho perto
-			CurrentTarget = nil
-			local alive = ScanMobs(false)
-			local groupRadius = tonumber(getgenv().HubConfig.GroupRadius) or 180
-
-			if CurrentSlotName then
-				local bestSameGroup = nil
-				local bestSameDist = math.huge
-				for _, m in ipairs(alive) do
-					if MatchesMobName(m.name, CurrentSlotName) and IsTargetStillAlive(m) then
-						local d = (hrp.Position - m.hrp.Position).Magnitude
-						if d <= groupRadius and d < bestSameDist then
-							bestSameDist = d
-							bestSameGroup = m
+						for _ = 1, 6 do
+							if not Estado.AutoFarm or Estado.AutoSeaBeast or Estado.AtivandoPlacaAgora then break end
+							if Estado.MobsSelecionados[Estado.IndiceFila] ~= labelAlvo then break end
+							mob, mobHRP, mobHum = EncontrarMobVivo(infoMob.nome)
+							if mob then break end
+							local hrp = GetHRP()
+							if hrp and (hrp.Position - posDestino).Magnitude > 16 then
+								TPNoAlvo(posDestino, nil, false)
+							elseif hrp then
+								LimparFisica(hrp)
+							end
+							task.wait(0.18)
 						end
 					end
-				end
 
-				if bestSameGroup then
-					CurrentTarget = bestSameGroup
-					KnownMobPositions[NormalizeName(bestSameGroup.name)] = bestSameGroup.hrp.CFrame
-					local sidePos = (bestSameGroup.hrp.CFrame * CFrame.new(getgenv().HubConfig.SideOffset, 0, 0)).Position
-					TpBypassMove(CFrame.lookAt(sidePos, bestSameGroup.hrp.Position))
-					PerformAttack(bestSameGroup)
-					return
-				end
-			end
+					if mob and mobHRP and mobHum then
+						Estado.PosicaoSalvaPorMob[infoMob.nome] = mobHRP.Position + Vector3.new(0, Estado.AlturaFarm, 0)
+						AtualizarStatus("Farmando [" .. Estado.IndiceFila .. "/" .. #selecionados .. "]: " .. infoMob.nome)
 
-			-- 3) Busca o próximo mob válido entre os 2 selecionados
-			local function findNearestForSlot(slotName)
-				local best = nil
-				local bestDist = math.huge
-				for _, m in ipairs(alive) do
-					if MatchesMobName(m.name, slotName) and IsTargetStillAlive(m) then
-						local d = (hrp.Position - m.hrp.Position).Magnitude
-						if d < bestDist then
-							bestDist = d
-							best = m
+						while Estado.AutoFarm and not Estado.AutoSeaBeast and not Estado.AtivandoPlacaAgora and not EstaPausado() and MobEstaVivo(mob, mobHRP, mobHum) do
+							local labelAtual = Estado.MobsSelecionados[Estado.IndiceFila]
+							if labelAtual ~= labelAlvo then break end
+
+							local basePos = mobHRP.Position
+							local posAtaque = CalcularOffsetAtaque(basePos)
+							TPNoAlvo(posAtaque, basePos, false)
+							pcall(ExecutarAtaque, true)
+							task.wait(Estado.FastAttack and 0.14 or 0.24)
+						end
+
+						local proximoDoMesmo, pHRP, _ = EncontrarMobVivo(infoMob.nome)
+						if proximoDoMesmo and pHRP then
+							TPNoAlvo(CalcularOffsetAtaque(pHRP.Position), pHRP.Position, false)
+						elseif #Estado.MobsSelecionados > 1 then
+							AvancarParaProximoMob()
+							local proxLabel = Estado.MobsSelecionados[Estado.IndiceFila]
+							local proxInfo = proxLabel and MapaMobPorLabel[proxLabel]
+							if proxInfo and Estado.PosicaoSalvaPorMob[proxInfo.nome] then
+								TPNoAlvo(Estado.PosicaoSalvaPorMob[proxInfo.nome], nil, true)
+							end
+						end
+					else
+						if #Estado.MobsSelecionados > 1 then
+							AvancarParaProximoMob()
 						end
 					end
-				end
-				return best
-			end
-
-			local chosenMob = nil
-			local chosenSlotIdx = nil
-
-			for step = 0, count - 1 do
-				local idx = ((SlotTurn + step - 1) % count) + 1
-				local candidate = findNearestForSlot(selected[idx])
-				if candidate then
-					chosenMob = candidate
-					chosenSlotIdx = idx
-					break
+					task.wait(0.2)
 				end
 			end
+		else
+			task.wait(0.3)
+		end
+	end
+end)
 
-			if chosenMob then
-				CurrentSlotName = selected[chosenSlotIdx]
-				SlotTurn = (chosenSlotIdx % count) + 1
-		
+local MainTab = Window:CreateTab("Sea 2", 4483362458)
+local PlacaTab = Window:CreateTab("Auto Placa", 4483362458)
+
+StatusParagraph = MainTab:CreateParagraph({
+	Title = "Status Atual",
+	Content = "Pronto. Câmera mais suave ao mexer no mar + Auto Placa em aba própria."
+})
+
+MainTab:CreateDropdown({
+	Name = "Mobs (Até 2)",
+	Options = OpcoesMobsLabel,
+	CurrentOption = { DadosMobsSea2[1].label },
+	MultipleOptions = true,
+	Flag = "DropMobsMulti",
+	Callback = function(Options)
+		if #Options > 2 then
+			Estado.MobsSelecionados = { Options[#Options - 1], Options[#Options] }
+		else
+			Estado.MobsSelecionados = Options
+		end
+		Estado.IndiceFila = 1
+		AtualizarStatus("Mobs ativos: " .. (#Estado.MobsSelecionados > 0 and table.concat(Estado.MobsSelecionados, ", ") or "Nenhum"))
+	end,
+})
+
+MainTab:CreateToggle({
+	Name = "Auto Farm",
+	CurrentValue = false,
+	Flag = "ToggleAutoFarm",
+	Callback = function(Value)
+		Estado.AutoFarm = Value
+		Estado.IndiceFila = 1
+		AtualizarStatus("Auto Farm: " .. (Value and "LIGADO" or "DESLIGADO"))
+	end,
+})
+
+MainTab:CreateToggle({
+	Name = "Auto Sea Beast",
+	CurrentValue = false,
+	Flag = "ToggleAutoSeaBeast",
+	Callback = function(Value)
+		Estado.AutoSeaBeast = Value
+		AtualizarStatus(Value and "Auto Sea Beast: LIGADO (aguardando Kraken / Sea Serpent)" or "Auto Sea Beast: DESLIGADO")
+	end,
+})
+
+MainTab:CreateToggle({
+	Name = "Auto Attack",
+	CurrentValue = false,
+	Flag = "ToggleAutoAttack",
+	Callback = function(Value)
+		Estado.AutoAttack = Value
+		AtualizarStatus("Auto Attack: " .. (Value and "LIGADO" or "DESLIGADO"))
+	end,
+})
+
+MainTab:CreateToggle({
+	Name = "Fast Attack",
+	CurrentValue = true,
+	Flag = "ToggleFastAttack",
+	Callback = function(Value
